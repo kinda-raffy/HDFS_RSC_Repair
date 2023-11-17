@@ -74,8 +74,8 @@ the platforms. We need a system to track a dependency - for a package - for a pl
 }
 ```
 
-The root JSON element contains unique _dependency_ children. This in turn contains the name of the _
-platforms_ and the list of _packages_ to be installed for that platform. Just to give an example of
+The root JSON element contains unique _dependency_ children. This in turn contains the name of the 
+_platforms_ and the list of _packages_ to be installed for that platform. Just to give an example of
 how to interpret the above JSON -
 
 1. For `dependency_1`, `package_1` needs to be installed for `platform_1`.
