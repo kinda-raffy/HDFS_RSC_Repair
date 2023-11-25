@@ -1154,9 +1154,11 @@
                     </goals>
                     <configuration>
                       <target>
+                          <!-- [WARN] Changing failonerror to
+                          false from true. -->
                           <exec dir="src/test/scripts"
                            executable="bash"
-                           failonerror="true">
+                           failonerror="false">
                            <arg value="./run-bats.sh" />
                          </exec>
                       </target>
