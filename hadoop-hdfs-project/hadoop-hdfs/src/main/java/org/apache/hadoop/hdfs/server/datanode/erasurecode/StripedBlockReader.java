@@ -25,6 +25,7 @@ import org.apache.hadoop.hdfs.BlockReader;
 import org.apache.hadoop.hdfs.DFSUtilClient;
 import org.apache.hadoop.hdfs.DFSUtilClient.CorruptedBlocks;
 import org.apache.hadoop.hdfs.client.impl.BlockReaderRemote;
+import org.apache.hadoop.hdfs.client.impl.BlockTraceReaderRemote;
 import org.apache.hadoop.hdfs.net.Peer;
 import org.apache.hadoop.hdfs.protocol.DatanodeID;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
@@ -36,12 +37,15 @@ import org.apache.hadoop.hdfs.util.StripedBlockUtil.BlockReadStats;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.util.OurECLogger;
+
 import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.concurrent.Callable;
 
@@ -69,6 +73,12 @@ class StripedBlockReader {
   private BlockReader blockReader;
   private ByteBuffer buffer;
   private boolean isLocal;
+  private boolean isTr = false;
+  private int helperIndex;
+  private int erasedIndex;
+  private int dataBlkNum;
+  private int parityBlkNum;
+  private OurECLogger ourECLogger = OurECLogger.getInstance();
 
   StripedBlockReader(StripedReader stripedReader, DataNode datanode,
                      Configuration conf, short index, ExtendedBlock block,
@@ -88,9 +98,44 @@ class StripedBlockReader {
     }
   }
 
+  StripedBlockReader(StripedReader stripedReader, DataNode datanode,
+                     Configuration conf, short index, ExtendedBlock block,
+                     DatanodeInfo source, long offsetInBlock,
+                     boolean isTr, int helperIndex, int erasedIndex, int dataBlkNum, int parityBlkNum) {
+    this.stripedReader = stripedReader;
+    this.datanode = datanode;
+    this.conf = conf;
+
+
+    this.index = index;
+    this.source = source;
+    this.block = block;
+    this.isLocal = false;
+    //flag to indicate whether trace repair is enabled or not
+    this.isTr = isTr;
+    //pass helper node and erased node's index to look up TR table
+    //also pass dataBlkNum and parityBlkNum for accommodating multiple code params in TR framework (in future)
+    this.helperIndex = helperIndex;
+    this.erasedIndex = erasedIndex;
+    this.dataBlkNum = dataBlkNum;
+    this.parityBlkNum = parityBlkNum;
+    BlockReader tmpBlockReader = createBlockReader(offsetInBlock);
+    if (tmpBlockReader != null) {
+      this.blockReader = tmpBlockReader;
+    }
+  }
+
   ByteBuffer getReadBuffer() {
     if (buffer == null) {
       this.buffer = stripedReader.allocateReadBuffer();
+    }
+    return buffer;
+  }
+
+  ByteBuffer getReadBuffer(int machineIndex) {
+    // [TODO] Machine index is ignored.
+    if (buffer == null) {
+      this.buffer = stripedReader.allocateReadBuffer(machineIndex);
     }
     return buffer;
   }
@@ -128,10 +173,19 @@ class StripedBlockReader {
       if (peer.isLocal()) {
         this.isLocal = true;
       }
-      return BlockReaderRemote.newBlockReader(
-          "dummy", block, blockToken, offsetInBlock,
-          block.getNumBytes() - offsetInBlock, true, "", peer, source,
-          null, stripedReader.getCachingStrategy(), -1, conf);
+      // [TODO] Invert this conditional.
+      if (!isTr) {
+        return BlockReaderRemote.newBlockReader(
+                "dummy", block, blockToken, offsetInBlock,
+                block.getNumBytes() - offsetInBlock, true, "", peer, source,
+                null, stripedReader.getCachingStrategy(), -1, conf);
+      } else {
+        return BlockTraceReaderRemote.newBlockTraceReader(
+                "dummy", block, blockToken, offsetInBlock,
+                block.getNumBytes() - offsetInBlock, false, "", peer, source,
+                null, stripedReader.getCachingStrategy(), datanode.getTracer(), -1,
+                erasedIndex, helperIndex, dataBlkNum, parityBlkNum);
+      }
     } catch (IOException e) {
       LOG.info("Exception while creating remote block reader, datanode {}",
           source, e);
@@ -171,7 +225,8 @@ class StripedBlockReader {
       @Override
       public BlockReadStats call() throws Exception {
         try {
-          getReadBuffer().limit(length);
+          // [TODO] Machine index is ignored.
+          getReadBuffer(getIndex()).limit(length);
           return actualReadFromBlock();
         } catch (ChecksumException e) {
           LOG.warn("Found Checksum error for {} from {} at {}", block,
@@ -192,6 +247,11 @@ class StripedBlockReader {
    * Perform actual reading of bytes from block.
    */
   private BlockReadStats actualReadFromBlock() throws IOException {
+    // [TODO] Clean.
+
+    //    byte[]test = buffer.array();
+    //    ourECLogger.write(this, datanode.getDatanodeUuid(), "index: " + index + " - " +
+    //            Arrays.toString(Arrays.copyOfRange(test, 0, 30)));
     DataNodeFaultInjector.get().delayBlockReader();
     int len = buffer.remaining();
     int n = 0;
@@ -203,6 +263,11 @@ class StripedBlockReader {
       n += nread;
       stripedReader.getReconstructor().incrBytesRead(isLocal, nread);
     }
+    //    byte[]test2 = buffer.array();
+    //    ourECLogger.write(this, datanode.getDatanodeUuid(), "index: " + index + " - " +
+    //            Arrays.toString(Arrays.copyOfRange(test2, 0, 30)));
+    //    ourlog.write("|n In actualReadFromBlock() of StripedBlockReader..after calling read() of BlockReaderRemote.. the buffer content read now is: "+buffer.toString());
+
     return new BlockReadStats(n, blockReader.isShortCircuit(),
         blockReader.getNetworkDistance());
   }

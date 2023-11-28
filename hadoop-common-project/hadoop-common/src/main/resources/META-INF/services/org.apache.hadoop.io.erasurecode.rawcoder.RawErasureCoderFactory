@@ -16,3 +16,4 @@ org.apache.hadoop.io.erasurecode.rawcoder.NativeXORRawErasureCoderFactory
 org.apache.hadoop.io.erasurecode.rawcoder.RSRawErasureCoderFactory
 org.apache.hadoop.io.erasurecode.rawcoder.RSLegacyRawErasureCoderFactory
 org.apache.hadoop.io.erasurecode.rawcoder.XORRawErasureCoderFactory
+org.apache.hadoop.io.erasurecode.rawcoder.TRRawErasureCoderFactory

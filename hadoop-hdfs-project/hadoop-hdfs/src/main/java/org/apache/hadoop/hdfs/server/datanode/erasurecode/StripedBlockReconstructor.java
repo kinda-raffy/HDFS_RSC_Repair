@@ -17,14 +17,18 @@
  */
 package org.apache.hadoop.hdfs.server.datanode.erasurecode;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-
+import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.hdfs.server.datanode.DataNodeFaultInjector;
 import org.apache.hadoop.hdfs.server.datanode.metrics.DataNodeMetrics;
+import org.apache.hadoop.io.erasurecode.rawcoder.RawErasureDecoder;
 import org.apache.hadoop.io.erasurecode.rawcoder.InvalidDecodingException;
+import org.apache.hadoop.util.OurECLogger;
 import org.apache.hadoop.util.Time;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 /**
  * StripedBlockReconstructor reconstruct one or more missed striped block in
@@ -35,6 +39,7 @@ import org.apache.hadoop.util.Time;
 class StripedBlockReconstructor extends StripedReconstructor
     implements Runnable {
 
+  private OurECLogger ourECLogger = OurECLogger.getInstance();
   private StripedWriter stripedWriter;
 
   StripedBlockReconstructor(ErasureCodingWorker worker,
@@ -51,25 +56,38 @@ class StripedBlockReconstructor extends StripedReconstructor
 
   @Override
   public void run() {
+    // [TODO] Clean.
     try {
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "run reconstructing 1");
       initDecoderIfNecessary();
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "run reconstructing 2");
 
       initDecodingValidatorIfNecessary();
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "run reconstructing 3");
 
       getStripedReader().init();
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "run reconstructing 4");
 
       stripedWriter.init();
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "run reconstructing 5");
 
       reconstruct();
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "run reconstructing 6");
 
       stripedWriter.endTargetBlocks();
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "run reconstructing 7");
 
       // Currently we don't check the acks for packets, this is similar as
       // block replication.
     } catch (Throwable e) {
+      String errorStackTrace = ExceptionUtils.getStackTrace(e);
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "reconstructing exception: " + errorStackTrace);
+
       LOG.warn("Failed to reconstruct striped block: {}", getBlockGroup(), e);
       getDatanode().getMetrics().incrECFailedReconstructionTasks();
     } finally {
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "reconstructing final 1");
+
       float xmitWeight = getErasureCodingWorker().getXmitWeight();
       // if the xmits is smaller than 1, the xmitsSubmitted should be set to 1
       // because if it set to zero, we cannot to measure the xmits submitted
@@ -80,6 +98,8 @@ class StripedBlockReconstructor extends StripedReconstructor
       metrics.incrECReconstructionBytesRead(getBytesRead());
       metrics.incrECReconstructionRemoteBytesRead(getRemoteBytesRead());
       metrics.incrECReconstructionBytesWritten(getBytesWritten());
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "reconstructing final 2");
+
       getStripedReader().close();
       stripedWriter.close();
       cleanup();
@@ -88,11 +108,22 @@ class StripedBlockReconstructor extends StripedReconstructor
 
   @Override
   void reconstruct() throws IOException {
+    // [TODO] Clean.
+
+    ourECLogger.write(this, getDatanode().getDatanodeUuid(), "start reconstructing");
+
     while (getPositionInBlock() < getMaxTargetLength()) {
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "while loop reconstructing 1-getPositionInBlock: " +
+              getPositionInBlock() + "/" + getMaxTargetLength());
       DataNodeFaultInjector.get().stripedBlockReconstruction();
       long remaining = getMaxTargetLength() - getPositionInBlock();
       final int toReconstructLen =
           (int) Math.min(getStripedReader().getBufferSize(), remaining);
+
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "while loop reconstructing 1.5-bufferSize: " +
+              getStripedReader().getBufferSize() + "/" + remaining);
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "while loop reconstructing 2-getPositionInBlock: " +
+              getPositionInBlock() + "/" + getMaxTargetLength());
 
       long start = Time.monotonicNow();
       long bytesToRead = (long) toReconstructLen * getStripedReader().getMinRequiredSources();
@@ -103,10 +134,12 @@ class StripedBlockReconstructor extends StripedReconstructor
       // The returned success list is the source DNs we do real read from
       getStripedReader().readMinimumSources(toReconstructLen);
       long readEnd = Time.monotonicNow();
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "while loop reconstructing 3-toReconstructLen: " + toReconstructLen);
 
       // step2: decode to reconstruct targets
       reconstructTargets(toReconstructLen);
       long decodeEnd = Time.monotonicNow();
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "while loop reconstructing 4");
 
       // step3: transfer data
       long bytesToWrite = (long) toReconstructLen * stripedWriter.getTargets();
@@ -118,15 +151,18 @@ class StripedBlockReconstructor extends StripedReconstructor
         throw new IOException(error);
       }
       long writeEnd = Time.monotonicNow();
+      // Need to reconstruct: 1048576 bytes
+      // After the first loop: 1048064 bytes
+      // After the second loop: 512 bytes
 
       // Only the succeed reconstructions are recorded.
       final DataNodeMetrics metrics = getDatanode().getMetrics();
       metrics.incrECReconstructionReadTime(readEnd - start);
       metrics.incrECReconstructionDecodingTime(decodeEnd - readEnd);
       metrics.incrECReconstructionWriteTime(writeEnd - decodeEnd);
-
       updatePositionInBlock(toReconstructLen);
-
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "while loop reconstructing 5-getPositionInBlock: " +
+              getPositionInBlock() + "/" + getMaxTargetLength());
       clearBuffers();
     }
   }
@@ -157,9 +193,10 @@ class StripedBlockReconstructor extends StripedReconstructor
         throw e;
       }
     } else {
+      RawErasureDecoder decoder = getDecoder();
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "reconstructTargets - decoder: " + decoder);
       decode(inputs, erasedIndices, outputs);
     }
-
     stripedWriter.updateRealTargetBuffers(toReconstructLen);
   }
 

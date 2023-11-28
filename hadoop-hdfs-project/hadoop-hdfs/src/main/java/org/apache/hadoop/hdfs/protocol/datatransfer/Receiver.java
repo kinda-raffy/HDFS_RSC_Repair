@@ -36,6 +36,7 @@ import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpBlockChecksumP
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpBlockGroupChecksumProto;
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpCopyBlockProto;
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpReadBlockProto;
+import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpReadBlockTraceProto;
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpReplaceBlockProto;
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpRequestShortCircuitAccessProto;
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpTransferBlockProto;
@@ -50,6 +51,7 @@ import org.apache.hadoop.tracing.TraceScope;
 import org.apache.hadoop.tracing.Tracer;
 import org.apache.hadoop.tracing.TraceUtils;
 import org.apache.hadoop.thirdparty.protobuf.ByteString;
+import org.apache.hadoop.util.OurECLogger;
 
 /** Receiver */
 @InterfaceAudience.Private
@@ -106,6 +108,9 @@ public abstract class Receiver implements DataTransferProtocol {
     case READ_BLOCK:
       opReadBlock();
       break;
+    case READ_TRACE:
+      opReadBlockTrace();
+      break;
     case WRITE_BLOCK:
       opWriteBlock(in);
       break;
@@ -144,6 +149,32 @@ public abstract class Receiver implements DataTransferProtocol {
     Long readahead = strategy.hasReadahead() ?
         strategy.getReadahead() : null;
     return new CachingStrategy(dropBehind, readahead);
+  }
+
+  /** Receive OP_READ_TRACE */
+  private void opReadBlockTrace() throws IOException {
+    OpReadBlockTraceProto proto = OpReadBlockTraceProto.parseFrom(vintPrefixed(in));
+    TraceScope traceScope = continueTraceSpan(proto.getHeader(),
+            proto.getClass().getSimpleName());
+    OurECLogger ourECLogger = OurECLogger.getInstance();
+    ourECLogger.write(this, "Receiver.java", proto.getLostBlockIndex() + " proto length: " + proto.getLen());
+    try {
+      readBlockTrace(PBHelperClient.convert(proto.getHeader().getBaseHeader().getBlock()),
+              PBHelperClient.convert(proto.getHeader().getBaseHeader().getToken()),
+              proto.getHeader().getClientName(),
+              proto.getOffset(),
+              proto.getLen(),
+              proto.getSendChecksums(),
+              (proto.hasCachingStrategy() ?
+                      getCachingStrategy(proto.getCachingStrategy()) :
+                      CachingStrategy.newDefaultStrategy()),
+              proto.getLostBlockIndex(),
+              proto.getHelperIndex(),
+              proto.getDataBlkNum(),
+              proto.getParityBlkNum());
+    } finally {
+      if (traceScope != null) traceScope.close();
+    }
   }
 
   /** Receive OP_READ_BLOCK */

@@ -17,6 +17,7 @@
  */
 package org.apache.hadoop.hdfs.server.datanode.erasurecode;
 
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import org.apache.hadoop.util.Preconditions;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -30,17 +31,16 @@ import org.apache.hadoop.hdfs.util.StripedBlockUtil;
 import org.apache.hadoop.hdfs.util.StripedBlockUtil.BlockReadStats;
 import org.apache.hadoop.hdfs.util.StripedBlockUtil.StripingChunkReadResult;
 import org.apache.hadoop.util.DataChecksum;
+import org.apache.hadoop.hdfs.DFSUtilClient;
+import org.apache.hadoop.hdfs.client.impl.HelperTable96Client;
+import org.apache.hadoop.hdfs.protocol.ErasureCodingPolicy;
+import org.apache.hadoop.util.OurECLogger;
+
 import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.BitSet;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionService;
 import java.util.concurrent.Future;
@@ -51,6 +51,7 @@ import java.util.concurrent.Future;
  */
 @InterfaceAudience.Private
 class StripedReader {
+  private static OurECLogger ourECLogger = OurECLogger.getInstance();
   private static final Logger LOG = DataNode.LOG;
 
   private final int stripedReadTimeoutInMills;
@@ -62,7 +63,9 @@ class StripedReader {
 
   private final int dataBlkNum;
   private final int parityBlkNum;
+  private final int totalBlkNum;
 
+  private boolean isTr = false;
 
   private DataChecksum checksum;
   // Striped read buffer size
@@ -76,6 +79,7 @@ class StripedReader {
   private ByteBuffer[] zeroStripeBuffers;
   private short[] zeroStripeIndices;
 
+  private int erasedIndex;
   // sources
   private final byte[] liveIndices;
   private final DatanodeInfo[] sources;
@@ -84,6 +88,10 @@ class StripedReader {
 
   private final Map<Future<BlockReadStats>, Integer> futures = new HashMap<>();
   private final CompletionService<BlockReadStats> readService;
+
+  private final BitSet liveBitSet;
+  private final ErasureCodingPolicy ecPolicy;
+  private HelperTable96Client helperTable = new HelperTable96Client();
 
   StripedReader(StripedReconstructor reconstructor, DataNode datanode,
       Configuration conf, StripedReconstructionInfo stripedReconInfo) {
@@ -100,17 +108,36 @@ class StripedReader {
 
     dataBlkNum = stripedReconInfo.getEcPolicy().getNumDataUnits();
     parityBlkNum = stripedReconInfo.getEcPolicy().getNumParityUnits();
+    totalBlkNum = dataBlkNum + parityBlkNum;
 
     int cellsNum = (int) ((stripedReconInfo.getBlockGroup().getNumBytes() - 1)
         / stripedReconInfo.getEcPolicy().getCellSize() + 1);
-    minRequiredSources = Math.min(cellsNum, dataBlkNum);
 
-    if (minRequiredSources < dataBlkNum) {
-      int zeroStripNum = dataBlkNum - minRequiredSources;
-      zeroStripeBuffers = new ByteBuffer[zeroStripNum];
-      zeroStripeIndices = new short[zeroStripNum];
+    // [TODO] Clean.
+    this.ecPolicy = stripedReconInfo.getEcPolicy();
+    liveBitSet = new BitSet(
+            ecPolicy.getNumDataUnits() + ecPolicy.getNumParityUnits());
+    for (int i = 0; i < stripedReconInfo.getLiveIndices().length; i++) {
+      liveBitSet.set(stripedReconInfo.getLiveIndices()[i]);
     }
+    if (stripedReconInfo.getEcPolicy().getCodecName().equals("tr")) {
+      this.isTr = true;
 
+      //minRequiredSources = Math.min(cellsNum, (totalBlkNum - 1));
+      minRequiredSources = totalBlkNum - 1;
+      if (minRequiredSources < (totalBlkNum - 1)) {
+        int zeroStripNum = (totalBlkNum - 1) - minRequiredSources;
+        zeroStripeBuffers = new ByteBuffer[zeroStripNum];
+        zeroStripeIndices = new short[zeroStripNum];
+      }
+    } else {
+      minRequiredSources = Math.min(cellsNum, dataBlkNum);
+      if (minRequiredSources < dataBlkNum) {
+        int zeroStripNum = dataBlkNum - minRequiredSources;
+        zeroStripeBuffers = new ByteBuffer[zeroStripNum];
+        zeroStripeIndices = new short[zeroStripNum];
+      }
+    }
     // It is calculated by the maximum number of connections from either sources
     // or targets.
     xmits = Math.max(minRequiredSources,
@@ -148,15 +175,43 @@ class StripedReader {
 
     StripedBlockReader reader;
     int nSuccess = 0;
-    for (int i = 0; i < sources.length && nSuccess < minRequiredSources; i++) {
-      reader = createReader(i, 0);
-      readers.add(reader);
-      if (reader.getBlockReader() != null) {
-        initOrVerifyChecksum(reader);
-        successList[nSuccess++] = i;
+    // [TODO] Clean.
+    if (this.isTr) {
+      //stripedReconInfo.getEcPolicy().getCodecName()
+      for (int j = 0; j < totalBlkNum; j++) {
+        if (!liveBitSet.get(j)) {
+          erasedIndex = j;
+          break;
+        }
+      }
+
+      for (int i = 0; i < sources.length && nSuccess < minRequiredSources; i++) {
+
+        //we know failed node index erasedIndex
+        //if i < j, then call createReader(i)
+        //if i >= j, then call createReader(i+1)
+        //this logic excludes the erasedIndex and creates readers with only live node indices
+        int j = i; //to store idxInSources
+        if (i < erasedIndex)
+          reader = createTRReader(j, i, 0);
+        else
+          reader = createTRReader(j, i + 1, 0);
+        readers.add(reader);
+        if (reader.getBlockReader() != null) {
+          initOrVerifyChecksum(reader);
+          successList[nSuccess++] = i;
+        }
+      }
+    } else {
+      for (int i = 0; i < sources.length && nSuccess < minRequiredSources; i++) {
+        reader = createReader(i, 0);
+        readers.add(reader);
+        if (reader.getBlockReader() != null) {
+          initOrVerifyChecksum(reader);
+          successList[nSuccess++] = i;
+        }
       }
     }
-
     if (nSuccess < minRequiredSources) {
       String error = "Can't find minimum sources required by "
           + "reconstruction, block id: "
@@ -172,12 +227,26 @@ class StripedReader {
         sources[idxInSources], offsetInBlock);
   }
 
+  StripedBlockReader createTRReader(int idxInSources, int helperIndex, long offsetInBlock) {
+    return new StripedBlockReader(this, datanode,
+            conf, liveIndices[idxInSources],
+            reconstructor.getBlock(liveIndices[idxInSources]),
+            sources[idxInSources], offsetInBlock,
+            isTr, helperIndex, erasedIndex, dataBlkNum, parityBlkNum);
+  }
+
+  private int numberOfChunks(long datalen) {
+    return (int) ((datalen + DFSUtilClient.CHUNK_SIZE - 1)/DFSUtilClient.CHUNK_SIZE);
+  }
+
   private void initBufferSize() {
-    int bytesPerChecksum = checksum.getBytesPerChecksum();
+    // [TODO] Clean.
+    // int bytesPerChecksum = checksum.getBytesPerChecksum();
     // The bufferSize is flat to divide bytesPerChecksum
-    int readBufferSize = stripedReadBufferSize;
-    bufferSize = readBufferSize < bytesPerChecksum ? bytesPerChecksum :
-        readBufferSize - readBufferSize % bytesPerChecksum;
+    // int readBufferSize = stripedReadBufferSize;
+    // bufferSize = readBufferSize < bytesPerChecksum ? bytesPerChecksum :
+    //     readBufferSize - readBufferSize % bytesPerChecksum;
+    bufferSize = DFSUtilClient.CHUNK_SIZE * numberOfChunks(DFSUtilClient.getIoFileBufferSize(conf));
   }
 
   // init checksum from block reader
@@ -191,6 +260,11 @@ class StripedReader {
 
   protected ByteBuffer allocateReadBuffer() {
     return reconstructor.allocateBuffer(getBufferSize());
+  }
+
+  // [TODO] Machine index is not used.
+  protected ByteBuffer allocateReadBuffer(int machineIndex) {
+    return reconstructor.allocateBuffer(getBufferSize(machineIndex));
   }
 
   private void initZeroStrip() {
@@ -215,6 +289,8 @@ class StripedReader {
     // the reading length should not exceed the length for reconstruction
     long blockLen = reconstructor.getBlockLen(index);
     long remaining = blockLen - reconstructor.getPositionInBlock();
+    ourECLogger.write(this, datanode.getDatanodeUuid(), "getReadLength - index: " + index + " - blockLen: " +
+            blockLen + " - remaining: " + remaining + " - reconstructLength: " + reconstructLength);
     return (int) Math.min(remaining, reconstructLength);
   }
 
@@ -224,9 +300,30 @@ class StripedReader {
     for (int i = 0; i < successList.length; i++) {
       int index = successList[i];
       StripedBlockReader reader = getReader(index);
+      int readerIndex = reader.getIndex();
+
       ByteBuffer buffer = reader.getReadBuffer();
       paddingBufferToLen(buffer, toReconstructLen);
-      inputs[reader.getIndex()] = (ByteBuffer)buffer.flip();
+      inputs[readerIndex] = (ByteBuffer)buffer.flip();
+      ByteBuffer input = inputs[readerIndex];
+      byte[] tempBuffer = input.array();
+
+      int helperNodeIndex = readerIndex;
+      Object element = helperTable.getElement(helperNodeIndex, erasedIndex);
+      String s = element.toString();
+      String[] elements = s.split(",");
+      int traceBandwidth = Integer.parseInt(elements[0]);
+      int ONE_BYTE = 8; // 8 bits.
+      int tempBytesToKeep = (tempBuffer.length) * traceBandwidth / ONE_BYTE;
+      if (readerIndex == 3) {
+        ourECLogger.write(this, datanode.getDatanodeUuid(), "getInputBuffers 0 - reader.getIndex(): " + readerIndex + " - " +
+                " - dataLen: " + tempBuffer.length + " - dataLenToKeep: " + tempBytesToKeep + " - data: " +
+                Arrays.toString(Arrays.copyOfRange(tempBuffer, 0, tempBuffer.length)));
+       // ourECLogger.write(this, datanode.getDatanodeUuid(), "getInputBuffers 0 - reader.getIndex(): " + readerIndex + " - " +
+       //         " - dataLen: " + tempBuffer.length + " - dataLenToKeep: " + tempBytesToKeep + " - data: " +
+       //         Arrays.toString(Arrays.copyOfRange(tempBuffer, 0, 100)) +
+       //         "- endData: " + Arrays.toString(Arrays.copyOfRange(tempBuffer, tempBytesToKeep - 30, tempBytesToKeep)));
+      }
     }
 
     if (successList.length < dataBlkNum) {
@@ -237,7 +334,14 @@ class StripedReader {
         inputs[index] = (ByteBuffer)buffer.flip();
       }
     }
-
+    // [TODO] Clean.
+    // for (int i = 0; i < inputs.length; i++) {
+    //   if (inputs[i] != null) {
+    //     byte[]test = inputs[0].array();
+    //     ourECLogger.write(this, datanode.getDatanodeUuid(), "getInputBuffers 2 - reader.getIndex(): " +
+    //             Arrays.toString(Arrays.copyOfRange(test, 0, 30)));
+    //   }
+    // }
     return inputs;
   }
 
@@ -286,10 +390,14 @@ class StripedReader {
      * Read from minimum source DNs required, the success list contains
      * source DNs which we think best.
      */
+    ourECLogger.write(this, datanode.getDatanodeUuid(), "successList: " + Arrays.toString(successList));
+    ourECLogger.write(this, datanode.getDatanodeUuid(), "liveIndices: " + Arrays.toString(liveIndices));
     for (int i = 0; i < minRequiredSources; i++) {
       StripedBlockReader reader = readers.get(successList[i]);
       int toRead = getReadLength(liveIndices[successList[i]],
           reconstructLength);
+      ourECLogger.write(this, datanode.getDatanodeUuid(), "toRead: " + toRead + " - liveIndex: " + liveIndices[successList[i]]);
+
       if (toRead > 0) {
         Callable<BlockReadStats> readCallable =
             reader.readFromBlock(toRead, corruptedBlocks);
@@ -297,11 +405,14 @@ class StripedReader {
         futures.put(f, successList[i]);
       } else {
         // If the read length is 0, we don't need to do real read
-        reader.getReadBuffer().position(0);
+        // [TODO] Machine index is ignored.
+        reader.getReadBuffer(reader.getIndex()).position(0);
         newSuccess[nSuccess++] = successList[i];
       }
       usedFlag.set(successList[i]);
     }
+    ourECLogger.write(this, datanode.getDatanodeUuid(), "nSuccess: " + nSuccess + " - newSuccess: " + Arrays.toString(newSuccess));
+    ourECLogger.write(this, datanode.getDatanodeUuid(), "futures size: " + futures.keySet().size() + " - futures: " + futures);
 
     while (!futures.isEmpty()) {
       try {
@@ -309,6 +420,9 @@ class StripedReader {
             StripedBlockUtil.getNextCompletedStripedRead(
                 readService, futures, stripedReadTimeoutInMills);
         int resultIndex = -1;
+        ourECLogger.write(this, datanode.getDatanodeUuid(), "result index: " + result.index + " - state: " + result.state);
+        ourECLogger.write(this, datanode.getDatanodeUuid(), "nSuccess: " + nSuccess + "newSuccess: " + Arrays.toString(newSuccess));
+
         if (result.state == StripingChunkReadResult.SUCCESSFUL) {
           resultIndex = result.index;
         } else if (result.state == StripingChunkReadResult.FAILED) {
@@ -316,12 +430,20 @@ class StripedReader {
           // and schedule read from another source DN.
           StripedBlockReader failedReader = readers.get(result.index);
           failedReader.closeBlockReader();
+          ourECLogger.write(this, datanode.getDatanodeUuid(), "closeBlockReader 1: " + result.index);
+
           resultIndex = scheduleNewRead(usedFlag,
               reconstructLength, corruptedBlocks);
+          ourECLogger.write(this, datanode.getDatanodeUuid(), "closeBlockReader 2: " + resultIndex);
+
         } else if (result.state == StripingChunkReadResult.TIMEOUT) {
+          ourECLogger.write(this, datanode.getDatanodeUuid(), "timeout 1: " + result.index);
+
           // If timeout, we also schedule a new read.
           resultIndex = scheduleNewRead(usedFlag,
               reconstructLength, corruptedBlocks);
+          ourECLogger.write(this, datanode.getDatanodeUuid(), "timeout 1: " + resultIndex);
+
         }
         if (resultIndex >= 0) {
           newSuccess[nSuccess++] = resultIndex;
@@ -333,6 +455,8 @@ class StripedReader {
             break;
           }
         }
+        ourECLogger.write(this, datanode.getDatanodeUuid(), "nSuccess: " + nSuccess + "newSuccess: " + Arrays.toString(newSuccess));
+
       } catch (InterruptedException e) {
         LOG.info("Read data interrupted.", e);
         cancelReads(futures.keySet());
@@ -340,14 +464,22 @@ class StripedReader {
         break;
       }
     }
-
+    ourECLogger.write(this, datanode.getDatanodeUuid(), "complete - nSuccess / minRequiredSources: " + nSuccess + "/" + minRequiredSources);
     if (nSuccess < minRequiredSources) {
       String error = "Can't read data from minimum number of sources "
           + "required by reconstruction, block id: " +
           reconstructor.getBlockGroup().getBlockId();
       throw new IOException(error);
     }
-
+    // [TODO] Clean.
+    // for (int i = 0; i < successList.length; i++) {
+    //   int index = successList[i];
+    //   StripedBlockReader reader = getReader(index);
+    //   ByteBuffer buffer = reader.getReadBuffer();
+    //   byte[]test = buffer.array();
+    //   ourECLogger.write(this, datanode.getDatanodeUuid(), "doReadMinimumSources - reader.getIndex(): " + index + " - " +
+    //           Arrays.toString(Arrays.copyOfRange(test, 0, 30)));
+    // }
     return newSuccess;
   }
 
@@ -398,14 +530,17 @@ class StripedReader {
         if (toRead > 0) {
           stripedReader.closeBlockReader();
           stripedReader.resetBlockReader(reconstructor.getPositionInBlock());
+          ourECLogger.write(this, datanode.getDatanodeUuid(), "scheduleNewRead- close StripedReader");
           if (stripedReader.getBlockReader() != null) {
-            stripedReader.getReadBuffer().position(0);
+            // [TODO] Index is ignored.
+            stripedReader.getReadBuffer(stripedReader.getIndex()).position(0);
             m = i;
             reader = stripedReader;
           }
         } else {
           used.set(i);
-          stripedReader.getReadBuffer().position(0);
+          // [TODO] Index is ignored.
+          stripedReader.getReadBuffer(stripedReader.getIndex()).position(0);
           return i;
         }
       }
@@ -445,6 +580,8 @@ class StripedReader {
   }
 
   void close() {
+    ourECLogger.write(this, datanode.getDatanodeUuid(), "close all BlockReader: " + readers);
+
     if (zeroStripeBuffers != null) {
       for (ByteBuffer zeroStripeBuffer : zeroStripeBuffers) {
         reconstructor.freeBuffer(zeroStripeBuffer);
@@ -454,7 +591,8 @@ class StripedReader {
 
     for (StripedBlockReader reader : readers) {
       reader.closeBlockReader();
-      reconstructor.freeBuffer(reader.getReadBuffer());
+      // [TODO] Index is ignored.
+      reconstructor.freeBuffer(reader.getReadBuffer(reader.getIndex()));
       reader.freeReadBuffer();
     }
   }
@@ -470,6 +608,10 @@ class StripedReader {
   int getBufferSize() {
     return bufferSize;
   }
+  int getBufferSize(int machineIndex) {
+    // [TODO] Machine index is not used.
+    return bufferSize;
+  }
 
   DataChecksum getChecksum() {
     return checksum;
@@ -483,8 +625,9 @@ class StripedReader {
     }
 
     for (StripedBlockReader reader : readers) {
-      if (reader.getReadBuffer() != null) {
-        reader.getReadBuffer().clear();
+      // [TODO] Index is ignored.
+      if (reader.getReadBuffer(reader.getIndex()) != null) {
+        reader.getReadBuffer(reader.getIndex()).clear();
       }
     }
   }

@@ -1036,6 +1036,15 @@
 </property>
 
 <property>
+  <name>io.erasurecode.codec.tr.rawcoders</name>
+  <value>tr_java</value>
+  <description>
+    Comma separated raw coder implementations for the tr codec. The earlier
+    factory is prior to followings in case of failure of creating raw coders.
+  </description>
+</property>
+
+<property>
   <name>io.erasurecode.codec.native.enabled</name>
   <value>true</value>
   <description>

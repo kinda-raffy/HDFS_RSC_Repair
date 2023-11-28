@@ -46,6 +46,7 @@ public class TestCodecRegistry {
     assertTrue(codecs.contains(ErasureCodeConstants.RS_CODEC_NAME));
     assertTrue(codecs.contains(ErasureCodeConstants.RS_LEGACY_CODEC_NAME));
     assertTrue(codecs.contains(ErasureCodeConstants.XOR_CODEC_NAME));
+    assertTrue(codecs.contains(ErasureCodeConstants.TR_CODEC_NAME));
   }
 
   @Test
