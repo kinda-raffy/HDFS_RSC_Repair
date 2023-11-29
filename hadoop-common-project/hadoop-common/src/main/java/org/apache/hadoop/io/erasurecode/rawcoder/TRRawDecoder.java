@@ -303,54 +303,45 @@ public class TRRawDecoder extends RawErasureDecoder {
 
 
     /**
-     * Perform trace repair from the ByteBuffer traces received and recover the lost block into outputs
-     * @param inputs input buffers of the helper nodes to read the data from
-     * @param erasedIdx indexes of erased unit in the inputs array
+     * Perform trace repair from the ByteBuffer traces received and recovered
+     * from the lost block into outputs.
+     * @param inputs Input buffers of the helper nodes to read the data from.
+     * @param erasedIdx Indexes of erased unit in the inputs array.
      */
     protected void prepareColumnTracesByteBuffer(ByteBuffer[] inputs, int erasedIdx) {
-
-
-        int k=0;
-        for (int i=0; i < inputs.length; i++) { //iterate through all helpers
-
+        int k = 0;
+        for (int i = 0; i < inputs.length; i++) {  // Iterate through all helpers
             if (i == erasedIdx) {
                 continue;
             }
-
-            Object element=recTable.getElement(i, erasedIdx);
-
-            String st=element.toString();
-            String[] elements=st.split(",");
-            int traceBandwidth=Integer.parseInt(elements[0]);
-
-
-            //Get helper trace elements from helper i's inputs byte buffer into a byte array
+            Object element = recTable.getElement(i, erasedIdx);
+            String st = element.toString();
+            String[] elements = st.split(",");
+            int traceBandwidth = Integer.parseInt(elements[0]);
+            // Get helper trace elements from helper i's inputs byte buffer into a byte array.
             ByteBuffer helperTraceByteBuffer = inputs[i];
-//            byte[] inputArray = new byte[helperTraceByteBuffer.remaining()];
-//            helperTraceByteBuffer.get(inputArray);
-
-//            ourlog.write(this, "do decode - index: " + i + " - inputArray: " + inputArray.length);
-//            ourlog.write(this, "do decode - index: " + i + " - inputArray: " + Arrays.toString(Arrays.copyOfRange(inputArray, 0, 30)));
-
-
-            helperTraceByteBuffer.flip();  // Sets limit to current write position.
+            // byte[] inputArray = new byte[helperTraceByteBuffer.remaining()];
+            // helperTraceByteBuffer.get(inputArray);
+            // ourlog.write(this, "do decode - index: " + i + " - inputArray: " + inputArray.length);
+            // ourlog.write(this, "do decode - index: " + i + " - inputArray: " + Arrays.toString(Arrays.copyOfRange(inputArray, 0, 30)));
+            helperTraceByteBuffer.flip();  // Sets limit to the current write position.
             int n = helperTraceByteBuffer.limit();
 
-            helperTraceByteBuffer.rewind(); // Already done by flip I think.
+            helperTraceByteBuffer.rewind(); // [WARN] Already done by flip I think.
             byte[] helperTraceByteArray = new byte[n];
             helperTraceByteBuffer.get(helperTraceByteArray);
-//            ourlog.write(this, "do decode - index: " + i + " - helperTraceByteArray: " + helperTraceByteArray.length);
-//            ourlog.write(this, "do decode - index: " + i + " - helperTraceByteArray: " + Arrays.toString(Arrays.copyOfRange(helperTraceByteArray, 0, 30)));
+            // ourlog.write(this, "do decode - index: " + i + " - helperTraceByteArray: " + helperTraceByteArray.length);
+            // ourlog.write(this, "do decode - index: " + i + " - helperTraceByteArray: " + Arrays.toString(Arrays.copyOfRange(helperTraceByteArray, 0, 30)));
 
 
             // [SAFE ASSUMPTIONS] : 5120 is the number of data bytes in a packet (excluding header, TR ignores checksum)
             int originalBytesInInput = 5120;
 
-            //Create a boolean array containing all the trace bits in the input byte array by calling convertByteToBoolean().
-            //The 2nd argument specifies the the total number of trace bits (#bytes in the buffer * traceBandwidth) in this input buffer
+            // Create a boolean array containing all the trace bits in the input byte array by calling convertByteToBoolean().
+            // The 2nd argument specifies the the total number of trace bits (#bytes in the buffer * traceBandwidth) in this input buffer
             boolean[] helperTraceBooleanArray=convertByteToBoolean(helperTraceByteArray, originalBytesInInput*traceBandwidth);
-//            ourlog.write(this, "do decode - index: " + i + " - helperTraceBooleanArray: " + helperTraceBooleanArray.length);
-//            ourlog.write(this, "do decode - index: " + i + " - helperTraceBooleanArray: " + Arrays.toString(Arrays.copyOfRange(helperTraceBooleanArray, 0, 30)));
+           // ourlog.write(this, "do decode - index: " + i + " - helperTraceBooleanArray: " + helperTraceBooleanArray.length);
+           // ourlog.write(this, "do decode - index: " + i + " - helperTraceBooleanArray: " + Arrays.toString(Arrays.copyOfRange(helperTraceBooleanArray, 0, 30)));
 
             //boolean arraylist to store the column traces from this helper node
             ArrayList<Boolean> ar=new ArrayList<>();
