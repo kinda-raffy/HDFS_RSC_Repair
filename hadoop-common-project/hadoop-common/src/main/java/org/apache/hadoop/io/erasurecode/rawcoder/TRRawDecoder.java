@@ -80,7 +80,7 @@ public class TRRawDecoder extends RawErasureDecoder {
     private List<Byte> dataBytes0() {
         Byte[] defaultBytes = new Byte[] { 85, 85, 85, 85, 85, -35, -35, -35, -35, -35 };
         Byte[] endBytes = new Byte[] { 85, 85, 85, 85, 85, -35, -35, -35 };
-//        int numberOfRepetition = 52428;
+        // int numberOfRepetition = 52428;
         int numberOfRepetition = 1;
         return dataBytesFrom(defaultBytes, endBytes, numberOfRepetition);
     }
@@ -88,7 +88,7 @@ public class TRRawDecoder extends RawErasureDecoder {
     private List<Byte> dataBytes1() {
         Byte[] defaultBytes = new Byte[] { 85, 85, 85, 85, 85, -35, -35, -35, -35, -35 };
         Byte[] endBytes = new Byte[] { 85, 85, 85, 85, 85, -35, -35, -35 };
-//        int numberOfRepetition = 52428;
+        // int numberOfRepetition = 52428;
         int numberOfRepetition = 1;
         return dataBytesFrom(defaultBytes, endBytes, numberOfRepetition);
     }
@@ -96,7 +96,7 @@ public class TRRawDecoder extends RawErasureDecoder {
     private List<Byte> dataBytes2() {
         Byte[] defaultBytes = new Byte[] { -35, -35, -35, -35, -35, 85, 85, 85, 85, 85 };
         Byte[] endBytes = new Byte[] { -35, -35, -35, -35, -35, 85, 85, 85 };
-//        int numberOfRepetition = 52428;
+        // int numberOfRepetition = 52428;
         int numberOfRepetition = 1;
         return dataBytesFrom(defaultBytes, endBytes, numberOfRepetition);
     }
@@ -104,7 +104,7 @@ public class TRRawDecoder extends RawErasureDecoder {
     private List<Byte> dataBytes3() {
         Byte[] defaultBytes = new Byte[] { -25, -107, -41, 93, 117, -41, 93, 117, -41, -25, -98, 121, -25, -98, 121 };
         Byte[] endBytes = new Byte[] { -25, -107, -41, 93, 117, -41, 93, 117, -41, -25, -98, 121 };
-//        int numberOfRepetition = 52428;
+        // int numberOfRepetition = 52428;
         int numberOfRepetition = 1;
         return dataBytesFrom(defaultBytes, endBytes, numberOfRepetition);
     }
@@ -112,7 +112,7 @@ public class TRRawDecoder extends RawErasureDecoder {
     private List<Byte> dataBytes4() {
         Byte[] defaultBytes = new Byte[] { -25, -107, -41, 93, 117, -41, 93, 117, -41, -25, -98, 121, -25, -98, 121 };
         Byte[] endBytes = new Byte[] { -25, -107, -41, 93, 117, -41, 93, 117, -41, -25, -98, 121 };
-//        int numberOfRepetition = 52428;
+        // int numberOfRepetition = 52428;
         int numberOfRepetition = 1;
         return dataBytesFrom(defaultBytes, endBytes, numberOfRepetition);
     }
@@ -120,7 +120,7 @@ public class TRRawDecoder extends RawErasureDecoder {
     private List<Byte> dataBytes5() {
         Byte[] defaultBytes = new Byte[] { 119, 119, 119, 119, 119, 0, 0, 0, 0, 0 };
         Byte[] endBytes = new Byte[] { 119, 119, 119, 119, 119, 119, 119, 119 };
-//        int numberOfRepetition = 52428;
+        // int numberOfRepetition = 52428;
         int numberOfRepetition = 1;
         return dataBytesFrom(defaultBytes, endBytes, numberOfRepetition);
     }
@@ -128,7 +128,7 @@ public class TRRawDecoder extends RawErasureDecoder {
     private List<Byte> dataBytes6() {
         Byte[] defaultBytes = new Byte[] { 34, 17, 119, 34, -69, -18, -35, -69, -18, 119 };
         Byte[] endBytes = new Byte[] { 34, 17, 119, 34, -69, 85, 102, 0 };
-//        int numberOfRepetition = 52428;
+        // int numberOfRepetition = 52428;
         int numberOfRepetition = 1;
         return dataBytesFrom(defaultBytes, endBytes, numberOfRepetition);
     }
@@ -137,7 +137,7 @@ public class TRRawDecoder extends RawErasureDecoder {
     private List<Byte> dataBytes7() {
         Byte[] defaultBytes = new Byte[] { -98, 123, -82, 113, -50, 56, 20, 82, -53, 8, 44, 48, 81, 74, 105 };
         Byte[] endBytes = new Byte[] { -98, 123, -82, 113, -50, 56, 20, 80, 0, 36, -98, -5 };
-//        int numberOfRepetition = 52428;
+        // int numberOfRepetition = 52428;
         int numberOfRepetition = 1;
         return dataBytesFrom(defaultBytes, endBytes, numberOfRepetition);
     }
@@ -145,7 +145,7 @@ public class TRRawDecoder extends RawErasureDecoder {
     private List<Byte> dataBytes8() {
         Byte[] defaultBytes = new Byte[] { 51, -35, 68, 119, 0, 68, -86, 51, 0, 119 };
         Byte[] endBytes = new Byte[] { 51, -35, 68, 119, 0, -69, 85, -52 };
-//        int numberOfRepetition = 52428;
+        // int numberOfRepetition = 52428;
         int numberOfRepetition = 1;
         return dataBytesFrom(defaultBytes, endBytes, numberOfRepetition);
     }
@@ -179,8 +179,6 @@ public class TRRawDecoder extends RawErasureDecoder {
 
     }
 
-
-
     @Override
     protected void doDecode(ByteArrayDecodingState decodingState) {
         int numberOfOutputs = decodingState.outputs.length;
@@ -211,18 +209,18 @@ public class TRRawDecoder extends RawErasureDecoder {
                 convertListBytes(dataBytes7()),
                 convertListBytes(dataBytes8()) };
 
-//        ourlog.write(this, "received data length: " + inputs.length);
-//        ourlog.write(this, "received data " + 0 + ": " + Arrays.toString(Arrays.copyOfRange(inputs[0].array(), 0, 30)));
-
-//        for (int i = 0; i < inputs.length; i++) {
-//            if (i == erasedIdx) {
-//                continue;
-//            }
-//            ByteBuffer tempInput = inputs[i];
-//            byte[] tempByteArray = new byte[tempInput.limit()];
-//            tempInput.get(tempByteArray);
-//            ourlog.write(this, "received data - index: " + i + ": " + Arrays.toString(Arrays.copyOfRange(tempByteArray, 0, 30)));
-//        }
+        // ourlog.write(this, "received data length: " + inputs.length);
+        // ourlog.write(this, "received data " + 0 + ": " + Arrays.toString(Arrays.copyOfRange(inputs[0].array(), 0, 30)));
+        //
+        // for (int i = 0; i < inputs.length; i++) {
+        //     if (i == erasedIdx) {
+        //         continue;
+        //     }
+        //     ByteBuffer tempInput = inputs[i];
+        //     byte[] tempByteArray = new byte[tempInput.limit()];
+        //     tempInput.get(tempByteArray);
+        //     ourlog.write(this, "received data - index: " + i + ": " + Arrays.toString(Arrays.copyOfRange(tempByteArray, 0, 30)));
+        // }
 
         // column trace computation for the trace repair process
         prepareColumnTracesByteBuffer(inputs, erasedIdx);
@@ -231,20 +229,15 @@ public class TRRawDecoder extends RawErasureDecoder {
         // Compute 't' target traces from the column traces
         // And recover the lost data and write to output buffer
         computeTargetTracesAndRecoverByteBuffer(inputs, erasedIdx, bufOutput);
-        byte[]test = bufOutput.array();
-//        ourlog.write(this, "allocated data length: " + test.length);
-//        ourlog.write(this, "allocated data: " + Arrays.toString(Arrays.copyOfRange(test, 0, 100)));
+        byte[] test = bufOutput.array();
+        // ourlog.write(this, "allocated data length: " + test.length);
+        // ourlog.write(this, "allocated data: " + Arrays.toString(Arrays.copyOfRange(test, 0, 100)));
     }
 
-
-
-    //Function to calculate the log base 2 of a non-negative integer
-    public int log2(int N)
-    {
-
+    // n is a non-negative integer.
+    public int log2(int N) {
         // calculate log2 N indirectly using log() method
         int result = (int)(Math.log(N) / Math.log(2));
-
         return result;
     }
 
