@@ -229,6 +229,8 @@ public class TestReconstructStripedFile {
     // [TODO] Write test code to read the content from the test file and assert
     assertResults(1);
   }
+  /*
+
 
   @Test(timeout = 120000)
   public void testRecoverOneDataBlockFullStripe() throws Exception {
@@ -249,9 +251,9 @@ public class TestReconstructStripedFile {
             ReconstructionType.DataOnly, 1);
     // [TODO] Write test code to read the content from the test file and assert
     assertResults(1);
-  }*/
+  }
 
-  /*@Test(timeout = 120000)
+  @Test(timeout = 120000)
   public void testRecoverOneParityBlock() throws Exception {
     int fileLen = (dataBlkNum + 1) * blockSize + blockSize / 10;
     assertFileBlocksReconstruction("/testRecoverOneParityBlock", fileLen,
