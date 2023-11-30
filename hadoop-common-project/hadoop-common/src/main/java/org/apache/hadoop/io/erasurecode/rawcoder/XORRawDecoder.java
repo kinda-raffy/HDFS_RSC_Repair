@@ -19,6 +19,7 @@ package org.apache.hadoop.io.erasurecode.rawcoder;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.io.erasurecode.ErasureCoderOptions;
+import org.apache.hadoop.util.OurECLogger;
 
 import java.nio.ByteBuffer;
 
@@ -31,6 +32,7 @@ import java.nio.ByteBuffer;
  */
 @InterfaceAudience.Private
 public class XORRawDecoder extends RawErasureDecoder {
+  private static OurECLogger ourlog = OurECLogger.getInstance();
 
   public XORRawDecoder(ErasureCoderOptions coderOptions) {
     super(coderOptions);
@@ -43,6 +45,7 @@ public class XORRawDecoder extends RawErasureDecoder {
     ByteBuffer output = decodingState.outputs[0];
 
     int erasedIdx = decodingState.erasedIndexes[0];
+    ourlog.write("\n ByteBuffer decode");
 
     // Process the inputs.
     int iIdx, oIdx;
@@ -55,6 +58,7 @@ public class XORRawDecoder extends RawErasureDecoder {
       for (iIdx = decodingState.inputs[i].position(), oIdx = output.position();
            iIdx < decodingState.inputs[i].limit();
            iIdx++, oIdx++) {
+        ourlog.write("\n Decode symbols for input block = "+i+" is: "+decodingState.inputs[i].get(iIdx));
         output.put(oIdx, (byte) (output.get(oIdx) ^
             decodingState.inputs[i].get(iIdx)));
       }
@@ -68,6 +72,7 @@ public class XORRawDecoder extends RawErasureDecoder {
     CoderUtil.resetOutputBuffers(decodingState.outputs,
         decodingState.outputOffsets, dataLen);
     int erasedIdx = decodingState.erasedIndexes[0];
+    ourlog.write("\n ByteArray decode");
 
     // Process the inputs.
     int iIdx, oIdx;
@@ -80,6 +85,7 @@ public class XORRawDecoder extends RawErasureDecoder {
       for (iIdx = decodingState.inputOffsets[i],
                oIdx = decodingState.outputOffsets[0];
            iIdx < decodingState.inputOffsets[i] + dataLen; iIdx++, oIdx++) {
+        ourlog.write("\n Decode symbols for input block = "+i+" is: "+decodingState.inputs[i][iIdx]);
         output[oIdx] ^= decodingState.inputs[i][iIdx];
       }
     }

@@ -35,6 +35,7 @@ import org.apache.hadoop.hdfs.DFSStripedOutputStream;
 import org.apache.hadoop.security.token.Token;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.apache.hadoop.util.OurECLogger;
 
 import java.nio.ByteBuffer;
 import java.util.*;
@@ -75,6 +76,7 @@ public class StripedBlockUtil {
 
   public static final Logger LOG =
       LoggerFactory.getLogger(StripedBlockUtil.class);
+  private static OurECLogger ourECLogger = OurECLogger.getInstance();
 
   /**
    * Struct holding the read statistics. This is used when reads are done
@@ -305,10 +307,12 @@ public class StripedBlockUtil {
         return new StripingChunkReadResult(StripingChunkReadResult.TIMEOUT);
       }
     } catch (ExecutionException e) {
+      ourECLogger.write(StripedBlockUtil.class, "future task failed.");
       LOG.debug("Exception during striped read task", e);
       return new StripingChunkReadResult(futures.remove(future),
           StripingChunkReadResult.FAILED);
     } catch (CancellationException e) {
+      ourECLogger.write(StripedBlockUtil.class, "future task cancelled: " + e.getLocalizedMessage());
       LOG.debug("Exception during striped read task", e);
       return new StripingChunkReadResult(futures.remove(future),
           StripingChunkReadResult.CANCELLED);

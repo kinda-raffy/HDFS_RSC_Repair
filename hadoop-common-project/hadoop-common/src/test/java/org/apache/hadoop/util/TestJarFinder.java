@@ -87,7 +87,7 @@ public class TestJarFinder {
 
     File metaInfDir = new File(dir, "META-INF");
     metaInfDir.mkdirs();
-    File manifestFile = new File(metaInfDir, "MANIFEST.MF");
+    File manifestFile = new File(metaInfDir, "META-INF/MANIFEST.MF");
     Manifest manifest = new Manifest();
     OutputStream os = new FileOutputStream(manifestFile);
     manifest.write(os);

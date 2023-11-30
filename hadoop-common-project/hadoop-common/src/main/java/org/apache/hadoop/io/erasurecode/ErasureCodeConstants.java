@@ -31,7 +31,10 @@ public final class ErasureCodeConstants {
   public static final String XOR_CODEC_NAME = "xor";
   public static final String HHXOR_CODEC_NAME = "hhxor";
   public static final String REPLICATION_CODEC_NAME = "replication";
+  public static final String TR_CODEC_NAME = "tr";
 
+  public static final ECSchema TR_6_3_SCHEMA = new ECSchema(
+          TR_CODEC_NAME, 6, 3);
   public static final ECSchema RS_6_3_SCHEMA = new ECSchema(
       RS_CODEC_NAME, 6, 3);
 

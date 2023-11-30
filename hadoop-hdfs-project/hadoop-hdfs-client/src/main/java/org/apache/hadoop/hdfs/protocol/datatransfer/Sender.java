@@ -39,6 +39,7 @@ import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpBlockChecksumP
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpBlockGroupChecksumProto;
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpCopyBlockProto;
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpReadBlockProto;
+import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpReadBlockTraceProto;
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpReplaceBlockProto;
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpRequestShortCircuitAccessProto;
 import org.apache.hadoop.hdfs.protocol.proto.DataTransferProtos.OpTransferBlockProto;
@@ -117,6 +118,32 @@ public class Sender implements DataTransferProtocol {
     send(out, Op.READ_BLOCK, proto);
   }
 
+  @Override
+  public void readBlockTrace(final ExtendedBlock blk,
+                             final Token<BlockTokenIdentifier> blockToken,
+                             final String clientName,
+                             final long blockOffset,
+                             final long length,
+                             final boolean sendChecksum,
+                             final CachingStrategy cachingStrategy,
+                             final int erasedNodeIndex, final int helperNodeIndex,
+                             final int dataBlkNum, final int parityBlkNum ) throws IOException {
+
+    OpReadBlockTraceProto proto = OpReadBlockTraceProto.newBuilder()
+            .setHeader(DataTransferProtoUtil.buildClientHeader(blk, clientName,
+                    blockToken))
+            .setOffset(blockOffset)
+            .setLen(length)
+            .setHelperIndex(helperNodeIndex)
+            .setLostBlockIndex(erasedNodeIndex)
+            .setDataBlkNum(dataBlkNum)
+            .setParityBlkNum(parityBlkNum)
+            .setSendChecksums(sendChecksum)
+            .setCachingStrategy(getCachingStrategy(cachingStrategy))
+            .build();
+
+    send(out, Op.READ_TRACE, proto);
+  }
 
   @Override
   public void writeBlock(final ExtendedBlock blk,

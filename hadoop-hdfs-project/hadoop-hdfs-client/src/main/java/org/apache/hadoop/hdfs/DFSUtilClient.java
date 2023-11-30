@@ -117,6 +117,7 @@ public class DFSUtilClient {
   // Using the charset canonical name for String/byte[] conversions is much
   // more efficient due to use of cached encoders/decoders.
   private static final String UTF8_CSN = StandardCharsets.UTF_8.name();
+  public static final int CHUNK_SIZE = 32768;
 
   /**
    * Converts a string to a byte array using UTF8 encoding.

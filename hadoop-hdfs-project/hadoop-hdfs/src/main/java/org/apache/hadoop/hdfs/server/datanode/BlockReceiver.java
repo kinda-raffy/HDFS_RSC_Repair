@@ -66,9 +66,10 @@ import static org.apache.hadoop.io.nativeio.NativeIO.POSIX.SYNC_FILE_RANGE_WRITE
 
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.slf4j.Logger;
+import org.apache.hadoop.util.OurECLogger;
 
 /** A class that receives a block and writes to its own disk, meanwhile
- * may copies it to another site. If a throttler is provided,
+ * may copy it to another site. If a throttler is provided,
  * streaming throttling is also supported.
  **/
 class BlockReceiver implements Closeable {

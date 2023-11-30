@@ -24,6 +24,7 @@ import org.apache.hadoop.io.erasurecode.codec.ErasureCodec;
 import org.apache.hadoop.io.erasurecode.codec.HHXORErasureCodec;
 import org.apache.hadoop.io.erasurecode.codec.RSErasureCodec;
 import org.apache.hadoop.io.erasurecode.codec.XORErasureCodec;
+import org.apache.hadoop.io.erasurecode.codec.TRErasureCodec;
 import org.apache.hadoop.io.erasurecode.coder.ErasureDecoder;
 import org.apache.hadoop.io.erasurecode.coder.ErasureEncoder;
 import org.apache.hadoop.io.erasurecode.rawcoder.RawErasureCoderFactory;
@@ -62,6 +63,11 @@ public final class CodecUtil {
       IO_ERASURECODE_CODEC + "rs";
   public static final String IO_ERASURECODE_CODEC_RS =
       RSErasureCodec.class.getCanonicalName();
+  /** Erasure coder Trace-Repair codec. */
+  public static final String IO_ERASURECODE_CODEC_TR_KEY =
+          IO_ERASURECODE_CODEC + "tr";
+  public static final String IO_ERASURECODE_CODEC_TR =
+          TRErasureCodec.class.getCanonicalName();
   /** Erasure coder hitch hiker XOR codec. */
   public static final String IO_ERASURECODE_CODEC_HHXOR_KEY =
       IO_ERASURECODE_CODEC + "hhxor";
@@ -259,6 +265,10 @@ public final class CodecUtil {
       return conf.get(
           CodecUtil.IO_ERASURECODE_CODEC_RS_KEY,
           CodecUtil.IO_ERASURECODE_CODEC_RS);
+    case ErasureCodeConstants.TR_CODEC_NAME:
+      return conf.get(
+              CodecUtil.IO_ERASURECODE_CODEC_TR_KEY,
+              CodecUtil.IO_ERASURECODE_CODEC_TR);
     case ErasureCodeConstants.RS_LEGACY_CODEC_NAME:
       //TODO:rs-legacy should be handled differently.
       return conf.get(

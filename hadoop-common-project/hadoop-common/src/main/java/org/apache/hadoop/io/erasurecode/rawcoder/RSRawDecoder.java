@@ -23,6 +23,7 @@ import org.apache.hadoop.io.erasurecode.ErasureCoderOptions;
 import org.apache.hadoop.io.erasurecode.rawcoder.util.DumpUtil;
 import org.apache.hadoop.io.erasurecode.rawcoder.util.GF256;
 import org.apache.hadoop.io.erasurecode.rawcoder.util.RSUtil;
+import org.apache.hadoop.util.OurECLogger;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -35,6 +36,8 @@ import java.util.Arrays;
  */
 @InterfaceAudience.Private
 public class RSRawDecoder extends RawErasureDecoder {
+  private static OurECLogger ourlog = OurECLogger.getInstance();
+
   //relevant to schema and won't change during decode calls
   private byte[] encodeMatrix;
 
@@ -76,10 +79,15 @@ public class RSRawDecoder extends RawErasureDecoder {
         decodingState.decodeLength);
     prepareDecoding(decodingState.inputs, decodingState.erasedIndexes);
 
+    ByteBuffer[] inputs = decodingState.inputs;
+    ourlog.write(this, "received data length: " + inputs.length);
+    ourlog.write(this, "received data " + 0 + ": " + Arrays.toString(Arrays.copyOfRange(inputs[0].array(), 0, 30)));
+
     ByteBuffer[] realInputs = new ByteBuffer[getNumDataUnits()];
     for (int i = 0; i < getNumDataUnits(); i++) {
       realInputs[i] = decodingState.inputs[validIndexes[i]];
     }
+    ourlog.write("\n Inside RSRawDecoder: calling doDecode ByteBuffer...");
     RSUtil.encodeData(gfTables, realInputs, decodingState.outputs);
   }
 
@@ -90,14 +98,20 @@ public class RSRawDecoder extends RawErasureDecoder {
         decodingState.outputOffsets, dataLen);
     prepareDecoding(decodingState.inputs, decodingState.erasedIndexes);
 
+    byte[][] inputs = decodingState.inputs;
+    ourlog.write(this, "received data length: " + inputs.length);
+    ourlog.write(this, "received data " + 0 + ": " + Arrays.toString(Arrays.copyOfRange(inputs[0], 0, 30)));
+
     byte[][] realInputs = new byte[getNumDataUnits()][];
     int[] realInputOffsets = new int[getNumDataUnits()];
     for (int i = 0; i < getNumDataUnits(); i++) {
       realInputs[i] = decodingState.inputs[validIndexes[i]];
       realInputOffsets[i] = decodingState.inputOffsets[validIndexes[i]];
     }
+    ourlog.write("\n Inside RSRawDecoder: calling doDecode ByteArray...");
     RSUtil.encodeData(gfTables, dataLen, realInputs, realInputOffsets,
         decodingState.outputs, decodingState.outputOffsets);
+    ourlog.write("\n Inside RSRawDecoder: after decoding with RSUtil.encodeData call...");
   }
 
   private <T> void prepareDecoding(T[] inputs, int[] erasedIndexes) {
@@ -144,6 +158,7 @@ public class RSRawDecoder extends RawErasureDecoder {
     int i, j, r, p;
     byte s;
     byte[] tmpMatrix = new byte[getNumAllUnits() * getNumDataUnits()];
+    ourlog.write("\n Inside RSRawDecoder: in generateDecodeMatrix...");
 
     // Construct matrix tmpMatrix by removing error rows
     for (i = 0; i < getNumDataUnits(); i++) {
@@ -162,6 +177,7 @@ public class RSRawDecoder extends RawErasureDecoder {
                 invertMatrix[getNumDataUnits() * erasedIndexes[i] + j];
       }
     }
+    ourlog.write("\n Inside RSRawDecoder: in generateDecodeMatrix, computed gfInvertMatrix...");
 
     for (p = numErasedDataUnits; p < erasedIndexes.length; p++) {
       for (i = 0; i < getNumDataUnits(); i++) {

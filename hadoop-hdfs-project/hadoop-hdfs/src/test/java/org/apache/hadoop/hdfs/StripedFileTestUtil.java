@@ -579,7 +579,10 @@ public class StripedFileTestUtil {
    * @return ErasureCodingPolicy
    */
   public static ErasureCodingPolicy getDefaultECPolicy() {
-    return SystemErasureCodingPolicies.getPolicies().get(0);
+    // [TODO] Changed arg from 0 (RS 6,3 code) to 5 (TR 6,3 code) for testing purposes
+    // return SystemErasureCodingPolicies.getPolicies().get(0);
+    return SystemErasureCodingPolicies.getPolicies().get(5);
+
   }
 
   /**

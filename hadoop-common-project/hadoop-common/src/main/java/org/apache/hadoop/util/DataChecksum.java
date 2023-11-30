@@ -621,7 +621,7 @@ public class DataChecksum implements Checksum {
   }
   
   /**
-   * This just provides a dummy implimentation for Checksum class
+   * This just provides a dummy implementation for Checksum class
    * This is used when there is no checksum available or required for 
    * data
    */

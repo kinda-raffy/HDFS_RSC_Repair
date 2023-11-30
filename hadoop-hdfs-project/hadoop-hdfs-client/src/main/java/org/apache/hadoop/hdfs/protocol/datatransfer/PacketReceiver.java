@@ -35,6 +35,7 @@ import org.apache.hadoop.util.Preconditions;
 import org.apache.hadoop.thirdparty.com.google.common.primitives.Ints;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.apache.hadoop.util.OurECLogger;
 
 /**
  * Class to handle reading packets one-at-a-time from the wire.
@@ -51,9 +52,11 @@ public class PacketReceiver implements Closeable {
   public static final int MAX_PACKET_SIZE;
 
   static final Logger LOG = LoggerFactory.getLogger(PacketReceiver.class);
+  private static OurECLogger ourlog = OurECLogger.getInstance();
 
   private static final DirectBufferPool bufferPool = new DirectBufferPool();
   private final boolean useDirectBuffers;
+  public String datanodeUUID;
 
   /**
    * The entirety of the most recently read packet.
@@ -141,7 +144,8 @@ public class PacketReceiver implements Closeable {
 
     curPacketBuf.clear();
     curPacketBuf.limit(PacketHeader.PKT_LENGTHS_LEN);
-    doReadFully(ch, in, curPacketBuf);
+    // [MARK] Returns the byte array that backs this buffer
+    doReadFully(ch, in, curPacketBuf, datanodeUUID);
     curPacketBuf.flip();
     int payloadLen = curPacketBuf.getInt();
 
@@ -152,8 +156,21 @@ public class PacketReceiver implements Closeable {
           payloadLen);
     }
     int dataPlusChecksumLen = payloadLen - Ints.BYTES;
+    // [TODO] Document this check and subtraction.
+    if (datanodeUUID != null && !datanodeUUID.equals("")) {
+      dataPlusChecksumLen -= 29;
+    }
     int headerLen = curPacketBuf.getShort();
     if (headerLen < 0) {
+      // [TODO] Document this conditional.
+      if (datanodeUUID != null && !datanodeUUID.equals("")) {
+        curPacketBuf.position(0);
+        curPacketBuf.limit(payloadLen);
+        byte[] dataBuffer = new byte[payloadLen];
+        curPacketBuf.get(dataBuffer);
+        // ourlog.write(this, datanodeUUID, " negative header len - received data - seqNo: " + curHeader.getSeqno());
+      }
+
       throw new IOException("Invalid header length " + headerLen);
     }
 
@@ -176,7 +193,8 @@ public class PacketReceiver implements Closeable {
     curPacketBuf.position(PacketHeader.PKT_LENGTHS_LEN);
     curPacketBuf.limit(PacketHeader.PKT_LENGTHS_LEN +
         dataPlusChecksumLen + headerLen);
-    doReadFully(ch, in, curPacketBuf);
+    // doReadFully(ch, in, curPacketBuf);
+    doReadFully(ch, in, curPacketBuf, datanodeUUID);
     curPacketBuf.flip();
     curPacketBuf.position(PacketHeader.PKT_LENGTHS_LEN);
 
@@ -189,13 +207,13 @@ public class PacketReceiver implements Closeable {
     curHeader.setFieldsFromData(payloadLen, headerBuf);
 
     // Compute the sub-slices of the packet
-    int checksumLen = dataPlusChecksumLen - curHeader.getDataLen();
-    if (checksumLen < 0) {
+    // [WARN] Checksum is turned off.
+    /*if (checksumLen < 0) {
       throw new IOException("Invalid packet: data length in packet header " +
           "exceeds data length received. dataPlusChecksumLen=" +
           dataPlusChecksumLen + " header: " + curHeader);
-    }
-
+    }*/
+    int checksumLen = dataPlusChecksumLen - curHeader.getDataLen();
     reslicePacket(headerLen, checksumLen, curHeader.getDataLen());
   }
 
@@ -210,8 +228,26 @@ public class PacketReceiver implements Closeable {
         curPacketBuf.remaining());
   }
 
-
   private static void doReadFully(ReadableByteChannel ch, InputStream in,
+                                  ByteBuffer buf, String datanodeUUID) throws IOException {
+    if (ch != null) {
+      // ourlog.write("\n ReadableByteChannel is not null, call readChannelFully()");
+      readChannelFully(ch, buf);
+
+    } else {
+      com.google.common.base.Preconditions.checkState(!buf.isDirect(),
+              "Must not use direct buffers with InputStream API");
+      if (datanodeUUID != null && !datanodeUUID.equals("")) {
+        ourlog.write("\n ReadableByteChannel is null, call readFully() in IOUtils");
+      }
+      IOUtils.readFully(in, buf.array(),
+              buf.arrayOffset() + buf.position(),
+              buf.remaining());
+      buf.position(buf.position() + buf.remaining());
+    }
+  }
+
+  /*private static void doReadFully(ReadableByteChannel ch, InputStream in,
       ByteBuffer buf) throws IOException {
     if (ch != null) {
       readChannelFully(ch, buf);
@@ -223,7 +259,7 @@ public class PacketReceiver implements Closeable {
           buf.remaining());
       buf.position(buf.position() + buf.remaining());
     }
-  }
+  }*/
 
   private void reslicePacket(
       int headerLen, int checksumsLen, int dataLen) {
@@ -257,6 +293,15 @@ public class PacketReceiver implements Closeable {
     // length prefixes)
     curPacketBuf.position(0);
     curPacketBuf.limit(lenThroughData);
+    if (datanodeUUID != null && !datanodeUUID.equals("")) {
+      // ourlog.write(this, datanodeUUID, " before receiving data - seqNo: " + curHeader.getSeqno() +
+      //        " - dataLen: " + dataLen + " - headerLen: " + headerLen + " - checkSumLen: " + checksumsLen + " - packetLengthLen: " + PacketHeader.PKT_LENGTHS_LEN);
+      byte[] dataBuffer = new byte[lenThroughData];
+      curPacketBuf.get(dataBuffer);
+      // ourlog.write(this, datanodeUUID, " received data - seqNo: " + curHeader.getSeqno() + "-lenThroughData: " + lenThroughData
+      //        + "-data:________________________________________________________________________________________" + Arrays.toString(dataBuffer)
+      // );
+    }
   }
 
 

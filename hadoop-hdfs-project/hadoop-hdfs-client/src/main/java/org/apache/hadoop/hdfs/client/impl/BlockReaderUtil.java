@@ -19,14 +19,17 @@ package org.apache.hadoop.hdfs.client.impl;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.hdfs.BlockReader;
+import org.apache.hadoop.util.OurECLogger;
 
 import java.io.IOException;
+import java.util.Arrays;
 
 /**
  * For sharing between the local and remote block reader implementations.
  */
 @InterfaceAudience.Private
 class BlockReaderUtil {
+  private static OurECLogger ourECLogger = OurECLogger.getInstance();
 
   /* See {@link BlockReader#readAll(byte[], int, int)} */
   public static int readAll(BlockReader reader,
@@ -34,6 +37,7 @@ class BlockReaderUtil {
     int n = 0;
     for (;;) {
       int nread = reader.read(buf, offset + n, len - n);
+      ourECLogger.write("BlockReaderUtil", "readAll: " + Arrays.toString(Arrays.copyOfRange(buf, 0, 30)));
       if (nread <= 0)
         return (n == 0) ? nread : n;
       n += nread;
@@ -48,6 +52,7 @@ class BlockReaderUtil {
     int toRead = len;
     while (toRead > 0) {
       int ret = reader.read(buf, off, toRead);
+      ourECLogger.write("BlockReaderUtil", "readAll: " + Arrays.toString(Arrays.copyOfRange(buf, 0, 30)));
       if (ret < 0) {
         throw new IOException("Premature EOF from inputStream");
       }

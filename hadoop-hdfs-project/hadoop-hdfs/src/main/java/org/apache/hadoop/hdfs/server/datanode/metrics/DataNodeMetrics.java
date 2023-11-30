@@ -118,6 +118,7 @@ public class DataNodeMetrics {
   private MutableGaugeInt dataNodeBlockRecoveryWorkerCount;
 
   @Metric MutableRate readBlockOp;
+  @Metric MutableRate readBlockTraceOp;
   @Metric MutableRate writeBlockOp;
   @Metric MutableRate blockChecksumOp;
   @Metric MutableRate copyBlockOp;
@@ -373,6 +374,10 @@ public class DataNodeMetrics {
 
   public void addReadBlockOp(long latency) {
     readBlockOp.add(latency);
+  }
+
+  public void addReadBlockTraceOp(long latency) {
+    readBlockTraceOp.add(latency);
   }
 
   public void addWriteBlockOp(long latency) {
@@ -777,4 +782,29 @@ public class DataNodeMetrics {
     replaceBlockOpToOtherHost.incr();
   }
 
+  // Erasure code metrics.
+  public long getecReconstructionTasks() {
+    return ecReconstructionTasks.value();
+  }
+  public long getecDecodingTimeNanos() {
+    return ecDecodingTimeNanos.value();
+  }
+  public long getecReconstructionBytesRead() {
+    return ecReconstructionBytesRead.value();
+  }
+  public long getecReconstructionBytesWritten() {
+    return ecReconstructionBytesWritten.value();
+  }
+  public long getecReconstructionRemoteBytesRead() {
+    return ecReconstructionRemoteBytesRead.value();
+  }
+  public long getecReconstructionReadTimeMillis() {
+    return ecReconstructionReadTimeMillis.value();
+  }
+  public long getecReconstructionDecodingTimeMillis() {
+    return ecReconstructionDecodingTimeMillis.value();
+  }
+  public long getecReconstructionWriteTimeMillis() {
+    return ecReconstructionWriteTimeMillis.value();
+  }
 }

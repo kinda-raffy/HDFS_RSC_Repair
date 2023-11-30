@@ -39,6 +39,7 @@ import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.util.Preconditions;
 
 import org.slf4j.Logger;
+import org.apache.hadoop.util.OurECLogger;
 
 /**
  * Server used for receiving/sending a block of data. This is created to listen
@@ -47,6 +48,7 @@ import org.slf4j.Logger;
  */
 class DataXceiverServer implements Runnable {
   public static final Logger LOG = DataNode.LOG;
+  private OurECLogger ourECLogger = OurECLogger.getInstance();
 
   /**
    * Default time to wait (in seconds) for the number of running threads to drop
@@ -239,6 +241,8 @@ class DataXceiverServer implements Runnable {
     Peer peer = null;
     while (datanode.shouldRun && !datanode.shutdownForUpgrade) {
       try {
+        // [MARK] Accept Client/DN connection.
+        //  Peer represents the remote node/client that this server will be serving.
         peer = peerServer.accept();
 
         // Make sure the xceiver count is not exceeded
@@ -252,18 +256,27 @@ class DataXceiverServer implements Runnable {
         new Daemon(datanode.threadGroup,
             DataXceiver.create(peer, datanode, this))
             .start();
+        ourECLogger.write(this, datanode.getDatanodeUuid(), "creating dataXceiver 2 - peer: " + peer);
+
       } catch (SocketTimeoutException ignored) {
         // wake up to see if should continue to run
+        ourECLogger.write(this, datanode.getDatanodeUuid(), "SocketTimeoutException - ignored: " + ignored);
       } catch (AsynchronousCloseException ace) {
+        ourECLogger.write(this, datanode.getDatanodeUuid(), "AsynchronousCloseException - ace: " + ace);
+
         // another thread closed our listener socket - that's expected during shutdown,
         // but not in other circumstances
         if (datanode.shouldRun && !datanode.shutdownForUpgrade) {
           LOG.warn("{}:DataXceiverServer", datanode.getDisplayName(), ace);
         }
       } catch (IOException ie) {
+        ourECLogger.write(this, datanode.getDatanodeUuid(), "IOException - ie: " + ie);
+
         IOUtils.closeStream(peer);
         LOG.warn("{}:DataXceiverServer", datanode.getDisplayName(), ie);
       } catch (OutOfMemoryError ie) {
+        ourECLogger.write(this, datanode.getDatanodeUuid(), "OutOfMemoryError - ie: " + ie);
+
         IOUtils.closeStream(peer);
         // DataNode can run out of memory if there is too many transfers.
         // Log the event, Sleep for 30 seconds, other transfers may complete by
@@ -275,6 +288,8 @@ class DataXceiverServer implements Runnable {
           // ignore
         }
       } catch (Throwable te) {
+        ourECLogger.write(this, datanode.getDatanodeUuid(), "Throwable - Exiting due to: " + te);
+
         LOG.error("{}:DataXceiverServer: Exiting.", datanode.getDisplayName(),
             te);
         datanode.shouldRun = false;
@@ -285,12 +300,14 @@ class DataXceiverServer implements Runnable {
     lock.lock();
     try {
       if (!closed) {
+        ourECLogger.write(this, "DataXceiverServer", "close peer server");
         peerServer.close();
         closed = true;
       }
     } catch (IOException ie) {
       LOG.warn("{}:DataXceiverServer: close exception",
           datanode.getDisplayName(), ie);
+      ourECLogger.write(this, "DataXceiverServer", "close peer server exception " + ie);
     } finally {
       lock.unlock();
     }
@@ -407,6 +424,7 @@ class DataXceiverServer implements Runnable {
    */
   void closeAllPeers() {
     LOG.info("Closing all peers.");
+    ourECLogger.write(this, "DataXceiverServer", "Closing all peers");
     lock.lock();
     try {
       peers.keySet().forEach(IOUtils::closeStream);

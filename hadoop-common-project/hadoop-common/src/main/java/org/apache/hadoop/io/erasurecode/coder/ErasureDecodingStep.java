@@ -21,6 +21,7 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.io.erasurecode.ECBlock;
 import org.apache.hadoop.io.erasurecode.ECChunk;
 import org.apache.hadoop.io.erasurecode.rawcoder.RawErasureDecoder;
+import org.apache.hadoop.util.OurECLogger;
 
 import java.io.IOException;
 
@@ -34,6 +35,7 @@ public class ErasureDecodingStep implements ErasureCodingStep {
   private ECBlock[] outputBlocks;
   private int[] erasedIndexes;
   private RawErasureDecoder rawDecoder;
+  private static OurECLogger ourlog = OurECLogger.getInstance();
 
   /**
    * The constructor with all the necessary info.
@@ -54,6 +56,7 @@ public class ErasureDecodingStep implements ErasureCodingStep {
   @Override
   public void performCoding(ECChunk[] inputChunks, ECChunk[] outputChunks)
       throws IOException {
+    ourlog.write("\n Inside ErasureDecodingStep: before calling RawErasureDecoder");
     rawDecoder.decode(inputChunks, erasedIndexes, outputChunks);
   }
 
