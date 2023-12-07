@@ -9,7 +9,7 @@ import java.util.Date;
 public class OurTestLogger {
 
     private static OurTestLogger instance;
-    private String TestLogFilePath = "~/log/OurTestLog-TestCaseName.log";
+    private String TestLogFilePath = "log/OurTestLog-TestCaseName.log";
     private FileWriter fileWriter;
 
     private OurTestLogger(String testCaseName) {

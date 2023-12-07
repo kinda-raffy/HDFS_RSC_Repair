@@ -19,6 +19,7 @@ package org.apache.hadoop.hdfs.server.datanode.erasurecode;
 
 import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.hadoop.classification.InterfaceAudience;
+import org.apache.hadoop.hdfs.client.impl.HelperTable96Client;
 import org.apache.hadoop.hdfs.server.datanode.DataNodeFaultInjector;
 import org.apache.hadoop.hdfs.server.datanode.metrics.DataNodeMetrics;
 import org.apache.hadoop.io.erasurecode.rawcoder.RawErasureDecoder;
@@ -38,6 +39,7 @@ import java.util.Arrays;
 @InterfaceAudience.Private
 class StripedBlockReconstructor extends StripedReconstructor
     implements Runnable {
+  private HelperTable96Client helperTable = new HelperTable96Client();
 
   private OurECLogger ourECLogger = OurECLogger.getInstance();
   private StripedWriter stripedWriter;
@@ -137,7 +139,7 @@ class StripedBlockReconstructor extends StripedReconstructor
       ourECLogger.write(this, getDatanode().getDatanodeUuid(), "while loop reconstructing 3-toReconstructLen: " + toReconstructLen);
 
       // step2: decode to reconstruct targets
-      reconstructTargets(toReconstructLen);
+      mergeData(toReconstructLen);
       long decodeEnd = Time.monotonicNow();
       ourECLogger.write(this, getDatanode().getDatanodeUuid(), "while loop reconstructing 4");
 
@@ -165,40 +167,94 @@ class StripedBlockReconstructor extends StripedReconstructor
               getPositionInBlock() + "/" + getMaxTargetLength());
       clearBuffers();
     }
+
+    reconstructTargets();
   }
 
-  private void reconstructTargets(int toReconstructLen) throws IOException {
-    ByteBuffer[] inputs = getStripedReader().getInputBuffers(toReconstructLen);
 
-    int[] erasedIndices = stripedWriter.getRealTargetIndices();
-    ByteBuffer[] outputs = stripedWriter.getRealTargetBuffers(toReconstructLen);
-
-    if (isValidationEnabled()) {
-      markBuffers(inputs);
-      decode(inputs, erasedIndices, outputs);
-      resetBuffers(inputs);
-
-      DataNodeFaultInjector.get().badDecoding(outputs);
-      long start = Time.monotonicNow();
-      try {
-        getValidator().validate(inputs, erasedIndices, outputs);
-        long validateEnd = Time.monotonicNow();
-        getDatanode().getMetrics().incrECReconstructionValidateTime(
-            validateEnd - start);
-      } catch (InvalidDecodingException e) {
-        long validateFailedEnd = Time.monotonicNow();
-        getDatanode().getMetrics().incrECReconstructionValidateTime(
-            validateFailedEnd - start);
-        getDatanode().getMetrics().incrECInvalidReconstructionTasks();
-        throw e;
-      }
-    } else {
-      RawErasureDecoder decoder = getDecoder();
-      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "reconstructTargets - decoder: " + decoder);
-      decode(inputs, erasedIndices, outputs);
+  ByteBuffer[] receivedByteBuffers = new ByteBuffer[getStripedReader().numberOfInputs()];
+  public static ByteBuffer concat(ByteBuffer[] buffers, int overallCapacity) {
+    ByteBuffer all = ByteBuffer.allocateDirect(overallCapacity);
+    for (int i = 0; i < buffers.length; i++) {
+      ByteBuffer curr = buffers[i].slice();
+      all.put(curr);
     }
-    stripedWriter.updateRealTargetBuffers(toReconstructLen);
+    all.rewind();
+    return all;
   }
+
+  public static ByteBuffer clone(ByteBuffer original) {
+    ByteBuffer clone = ByteBuffer.allocate(original.capacity());
+    original.rewind();//copy from the beginning
+    clone.put(original);
+    original.rewind();
+    clone.flip();
+    return clone;
+  }
+
+  private void updateByteBuffers(ByteBuffer [] inputs) {
+    for (int i = 0; i < inputs.length; i++) {
+      ByteBuffer receivedByteBuffer = receivedByteBuffers[i];
+      ByteBuffer newInput = inputs[i];
+      if (newInput == null) {
+        continue;
+      }
+      if (receivedByteBuffer != null) {
+        ByteBuffer[] temps = new ByteBuffer[] { receivedByteBuffer, newInput};
+        int totalCapacity = receivedByteBuffer.capacity() + newInput.capacity();
+        receivedByteBuffers[i] = concat(temps, totalCapacity);
+      } else {
+        receivedByteBuffers[i] = clone(newInput);
+      }
+    }
+
+  }
+  private void mergeData(int toReconstructLen) throws IOException {
+    ByteBuffer[] inputs = getStripedReader().getInputBuffers(toReconstructLen);
+    updateByteBuffers(inputs);
+  }
+
+  private void reconstructTargets() throws IOException {
+    int reconstructLen = receivedByteBuffers[0].capacity();
+    byte[][] inputs = new byte[receivedByteBuffers.length][reconstructLen];
+    int[] inputLength = new int[receivedByteBuffers.length];
+    for (int i = 0; i < receivedByteBuffers.length; i++) {
+      int erasedIndex = getStripedReader().getErasedIndex();
+
+      if (i == erasedIndex) {
+        continue;
+      }
+
+      receivedByteBuffers[i].get(inputs[i]);
+      int helperNodeIndex = i;
+
+      Object element = helperTable.getElement(helperNodeIndex, erasedIndex);
+      String s = element.toString();
+      String[] elements = s.split(",");
+      int traceBandwidth = Integer.parseInt(elements[0]);
+      int ONE_BYTE = 8; // 8 bits;
+      inputLength[i] = reconstructLen * traceBandwidth / ONE_BYTE;
+
+      ourECLogger.write(this, getDatanode().getDatanodeUuid(), "reconstructTargets: " +
+              " - reconstructLen: " + inputLength[i] +
+              Arrays.toString(Arrays.copyOfRange(inputs[i], 0, 1000)));
+    }
+
+//    int[] erasedIndices = stripedWriter.getRealTargetIndices();
+//    ByteBuffer[] outputs = stripedWriter.getRealTargetBuffers(reconstructLen);
+//
+//
+//
+//    long start = System.nanoTime();
+//    RawErasureDecoder decoder = getDecoder();
+//    ourECLogger.write(this, getDatanode().getDatanodeUuid(), "reconstructTargets - decoder: " + decoder);
+//    getDecoder().decode(receivedByteBuffers, erasedIndices, outputs);
+//    long end = System.nanoTime();
+//    this.getDatanode().getMetrics().incrECDecodingTime(end - start);
+//
+//    stripedWriter.updateRealTargetBuffers(reconstructLen);
+  }
+
 
   private void decode(ByteBuffer[] inputs, int[] erasedIndices,
       ByteBuffer[] outputs) throws IOException {

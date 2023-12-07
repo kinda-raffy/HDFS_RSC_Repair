@@ -262,11 +262,6 @@ class StripedReader {
     return reconstructor.allocateBuffer(getBufferSize());
   }
 
-  // [TODO] Machine index is not used.
-  protected ByteBuffer allocateReadBuffer(int machineIndex) {
-    return reconstructor.allocateBuffer(getBufferSize(machineIndex));
-  }
-
   private void initZeroStrip() {
     if (zeroStripeBuffers != null) {
       for (int i = 0; i < zeroStripeBuffers.length; i++) {
@@ -292,6 +287,14 @@ class StripedReader {
     ourECLogger.write(this, datanode.getDatanodeUuid(), "getReadLength - index: " + index + " - blockLen: " +
             blockLen + " - remaining: " + remaining + " - reconstructLength: " + reconstructLength);
     return (int) Math.min(remaining, reconstructLength);
+  }
+
+  public int getErasedIndex() {
+    return erasedIndex;
+  }
+
+  public int numberOfInputs() {
+    return dataBlkNum + parityBlkNum;
   }
 
   ByteBuffer[] getInputBuffers(int toReconstructLen) {
@@ -406,7 +409,7 @@ class StripedReader {
       } else {
         // If the read length is 0, we don't need to do real read
         // [TODO] Machine index is ignored.
-        reader.getReadBuffer(reader.getIndex()).position(0);
+        reader.getReadBuffer().position(0);
         newSuccess[nSuccess++] = successList[i];
       }
       usedFlag.set(successList[i]);
@@ -533,14 +536,14 @@ class StripedReader {
           ourECLogger.write(this, datanode.getDatanodeUuid(), "scheduleNewRead- close StripedReader");
           if (stripedReader.getBlockReader() != null) {
             // [TODO] Index is ignored.
-            stripedReader.getReadBuffer(stripedReader.getIndex()).position(0);
+            stripedReader.getReadBuffer().position(0);
             m = i;
             reader = stripedReader;
           }
         } else {
           used.set(i);
           // [TODO] Index is ignored.
-          stripedReader.getReadBuffer(stripedReader.getIndex()).position(0);
+          stripedReader.getReadBuffer().position(0);
           return i;
         }
       }
@@ -592,7 +595,7 @@ class StripedReader {
     for (StripedBlockReader reader : readers) {
       reader.closeBlockReader();
       // [TODO] Index is ignored.
-      reconstructor.freeBuffer(reader.getReadBuffer(reader.getIndex()));
+      reconstructor.freeBuffer(reader.getReadBuffer());
       reader.freeReadBuffer();
     }
   }
@@ -608,10 +611,6 @@ class StripedReader {
   int getBufferSize() {
     return bufferSize;
   }
-  int getBufferSize(int machineIndex) {
-    // [TODO] Machine index is not used.
-    return bufferSize;
-  }
 
   DataChecksum getChecksum() {
     return checksum;
@@ -625,9 +624,8 @@ class StripedReader {
     }
 
     for (StripedBlockReader reader : readers) {
-      // [TODO] Index is ignored.
-      if (reader.getReadBuffer(reader.getIndex()) != null) {
-        reader.getReadBuffer(reader.getIndex()).clear();
+      if (reader.getReadBuffer() != null) {
+        reader.getReadBuffer().clear();
       }
     }
   }

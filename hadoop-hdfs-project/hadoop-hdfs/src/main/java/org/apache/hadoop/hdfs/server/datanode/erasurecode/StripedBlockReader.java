@@ -132,14 +132,6 @@ class StripedBlockReader {
     return buffer;
   }
 
-  ByteBuffer getReadBuffer(int machineIndex) {
-    // [TODO] Machine index is ignored.
-    if (buffer == null) {
-      this.buffer = stripedReader.allocateReadBuffer(machineIndex);
-    }
-    return buffer;
-  }
-
   void freeReadBuffer() {
     DataNodeFaultInjector.get().interceptFreeBlockReaderBuffer();
     buffer = null;
@@ -226,7 +218,8 @@ class StripedBlockReader {
       public BlockReadStats call() throws Exception {
         try {
           // [TODO] Machine index is ignored.
-          getReadBuffer(getIndex()).limit(length);
+          ourECLogger.write(this, datanode.getDatanodeUuid(), "readFromBlock: " + length);
+          getReadBuffer().limit(length);
           return actualReadFromBlock();
         } catch (ChecksumException e) {
           LOG.warn("Found Checksum error for {} from {} at {}", block,
