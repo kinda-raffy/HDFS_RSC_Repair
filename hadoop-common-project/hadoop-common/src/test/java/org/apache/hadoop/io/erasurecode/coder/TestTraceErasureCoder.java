@@ -26,28 +26,45 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
 
+import java.util.concurrent.TimeUnit;
+
 /**
- * Test Reed-Solomon encoding and decoding.
+ * Test Trace Repair encoding and decoding.
  */
 public class TestTraceErasureCoder extends TestErasureCoderBase {
     @Rule
-    public Timeout globalTimeout = new Timeout(300000);
+    public Timeout globalTimeout = new Timeout(300000, TimeUnit.MILLISECONDS);
 
     @Before
     public void setup() {
-
-        this.encoderClass = RSErasureEncoder.class;
+        /*this.encoderClass = RSErasureEncoder.class;
         this.decoderClass = RSErasureDecoder.class;
+
+        this.numChunksInBlock = 10;*/
+        this.encoderClass = TRErasureEncoder.class;
+        this.decoderClass = TRErasureDecoder.class;
 
         this.numChunksInBlock = 10;
     }
 
     @Test
+    public void testCodingNoDirectBuffer_9x6_erasing_d0() {
+        // [DEBUG] Prepare TestCoderBase before coding.
+        prepare(null, 6, 3, new int[] {0}, new int[] {});
+        /*
+          Doing twice to test if the coders can be repeatedly reused. This matters
+          as the underlying coding buffers are shared, which may have bugs.
+         */
+        testCoding(false);
+        testCoding(false);
+    }
+
+    @Test
     public void testCodingNoDirectBuffer_10x4_erasing_d0_p0() {
         prepare(null, 10, 4, new int[] {0}, new int[] {0});
-        /**
-         * Doing twice to test if the coders can be repeatedly reused. This matters
-         * as the underlying coding buffers are shared, which may have bugs.
+        /*
+          Doing twice to test if the coders can be repeatedly reused. This matters
+          as the underlying coding buffers are shared, which may have bugs.
          */
         testCoding(false);
         testCoding(false);
@@ -55,8 +72,8 @@ public class TestTraceErasureCoder extends TestErasureCoderBase {
 
     @Test
     public void testCodingDirectBufferWithConf_10x4_erasing_d0() {
-        /**
-         * This tests if the configuration items work or not.
+        /*
+          This tests if the configuration items work or not.
          */
         Configuration conf = new Configuration();
         conf.set(CodecUtil.IO_ERASURECODE_CODEC_RS_RAWCODERS_KEY,

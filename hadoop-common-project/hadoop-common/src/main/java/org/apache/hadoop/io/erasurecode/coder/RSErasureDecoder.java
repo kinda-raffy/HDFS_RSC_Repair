@@ -42,9 +42,7 @@ public class RSErasureDecoder extends ErasureDecoder {
 
   @Override
   protected ErasureCodingStep prepareDecodingStep(final ECBlockGroup blockGroup) {
-
     ECBlock[] inputBlocks = getInputBlocks(blockGroup);
-    ourlog.write("Inside RS EC Decoder, fetched input block groups");
     ECBlock[] outputBlocks = getOutputBlocks(blockGroup);
 
     RawErasureDecoder rawDecoder = checkCreateRSRawDecoder();

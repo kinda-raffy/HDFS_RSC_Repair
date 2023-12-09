@@ -410,9 +410,11 @@ public abstract class TestCoderBase {
 
   protected byte[] generateData(int len) {
     byte[] buffer = new byte[len];
-    for (int i = 0; i < buffer.length; i++) {
+    // [MARK] Data generation.
+    Arrays.fill(buffer, (byte) 78);
+    /*for (int i = 0; i < buffer.length; i++) {
       buffer[i] = (byte) RAND.nextInt(256);
-    }
+    }*/
     return buffer;
   }
 

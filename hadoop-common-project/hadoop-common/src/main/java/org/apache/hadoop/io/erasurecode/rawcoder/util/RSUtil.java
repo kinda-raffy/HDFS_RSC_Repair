@@ -94,9 +94,14 @@ public final class RSUtil {
    * @param outputs outputs.
    * @param outputOffsets outputOffsets.
    */
-  public static void encodeData(byte[] gfTables, int dataLen, byte[][] inputs,
-      int[] inputOffsets, byte[][] outputs,
-      int[] outputOffsets) {
+  public static void encodeData(
+    byte[] gfTables,
+    int dataLen,
+    byte[][] inputs,
+    int[] inputOffsets,
+    byte[][] outputs,
+    int[] outputOffsets
+  ) {
     int numInputs = inputs.length;
     int numOutputs = outputs.length;
     int l, i, j, iPos, oPos;
@@ -198,5 +203,4 @@ public final class RSUtil {
       }
     }
   }
-
 }

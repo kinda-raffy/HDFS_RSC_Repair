@@ -47,13 +47,16 @@ public class TRErasureEncoder extends ErasureEncoder {
 
         ECBlock[] inputBlocks = getInputBlocks(blockGroup);
         ourlog.write("Inside TRErasureEncoder: prepared input block groups for the encoding step");
-        return new ErasureEncodingStep(inputBlocks,
-                getOutputBlocks(blockGroup), rawEncoder);
+        return new ErasureEncodingStep(
+            inputBlocks,
+            getOutputBlocks(blockGroup),
+            rawEncoder
+        );
     }
 
     private RawErasureEncoder checkCreateTRRawEncoder() {
         if (rawEncoder == null) {
-            // TODO: we should create the raw coder according to codec.
+            // [TODO] we should create the raw coder according to codec.
             rawEncoder = CodecUtil.createRawEncoder(getConf(),
                     ErasureCodeConstants.TR_CODEC_NAME, getOptions());
         }

@@ -46,7 +46,7 @@
 
 
 #define TEST_SOURCES 127
-#define TEST_LEN 10000000
+#define TEST_LEN 10
 #define BIN_LEN 8
 //100.000 = 1.2->1.5s
 //0.015
@@ -650,11 +650,11 @@ unsigned char* repair_trace_optimised_OLD(int n, int j, unsigned char **buffs){
 	}
 	
 	for (i = 0; i < n; i++){
-		if( i != j){
+		if( i != j) {
 			Hij = h_htbl[i][j]+1;	//Hij = &H[i][j][1]
 			idx = i*8*TEST_LEN;
-			for (a = 0; a < bw[i]; a++){
-				for (test_codeword = 0; test_codeword < TEST_LEN; test_codeword++){
+			for (a = 0; a < bw[i]; a++) {
+				for (test_codeword = 0; test_codeword < TEST_LEN; test_codeword++) {
 					RepairTr[idx++] = parity[Hij[a] & (buffs[i][test_codeword])];	//idx = i*8*TEST_LEN + a*TEST_LEN + test_codeword
 				}
 			}
@@ -752,23 +752,38 @@ unsigned char* repair_trace_generation(int n, int i, int j, unsigned char **buff
     // Calculate bandwidth using H table
 	bw = h_htbl[i][j][0];
 	unsigned char* RepairTr = (unsigned char*) malloc(sizeof(unsigned char) * bw * TEST_LEN); 	// to store all actual repair traces as bits
-	 
+
 	Hij = h_htbl[i][j]+1;	// Hij = &H[i][j][1]: ignoring the first element which is the bw
+
+    printf("\nHij %d: \n", i);
+    for (int i = 0; i < 8; i++) {
+        printf("%d|%d ", Hij[i], Hij[i] > 127 ? Hij[i] - 256 : Hij[i]);
+    }
+    printf("\n");
+
 	idx = 0;
 	for (a = 0; a < bw; a++){
 		for (test_codeword = 0; test_codeword < TEST_LEN; test_codeword++){
 			RepairTr[idx++] = parity[Hij[a] & (buffs[i][test_codeword])];	//idx = a*TEST_LEN + test_codeword
 			//RepairTr[idx++] = product[Hij[a]][(buffs[i][test_codeword])];
 		}
-	} 
-	
+	}
+
+    printf("Repair trace for %d\n[", i);
+    for (int i = 0; i < bw * TEST_LEN; i++) {
+        printf("%d, ", RepairTr[i]);
+    }
+    printf("]\n");
+
 	return RepairTr;
 } 
 
 // Receiver j: receives repair traces from other Node i and recover cj (TEST_LEN of them)
 
-// buffs is the data.
+// [DEBUG] buffs is the data.
 unsigned char* repair_trace_optimised(int n, int j, unsigned char **buffs, double* repair_time_ptr){
+    printf("[FAIL] node is %d.\n\n", j);  // [DEBUG]
+
 	int a, b, i, u, idx, test_codeword; 				// for FOR loop
 	unsigned char bw[n];								// bw[i] = #bits sent from Node i to Node j
 	unsigned char table[72];							// to store a row in H or R to speed up the access
@@ -777,22 +792,32 @@ unsigned char* repair_trace_optimised(int n, int j, unsigned char **buffs, doubl
 	unsigned int traces_as_number;						// to store the decimal value of repair traces (converted to a number)
 	clock_t start, end;									// to measure the running time
 	double elapsed_array[n], elapsed, max_run_time;		// to store the running times and max running time of n-1 helpers
-	
+
+    // Held as bits.
 	unsigned char* RepairTrArray[n];					//RepairTrArray[i] is the pointer to the traces sent from Node i
-	unsigned char* RepairTrAsNumbers = (unsigned char*) malloc(sizeof(unsigned char) * n * TEST_LEN);	//to store repair traces as a number
+	unsigned char* RepairTrAsNumbers = (unsigned char*) malloc(sizeof(unsigned char) * n * TEST_LEN);	// to store repair traces as a number
 	memset(RepairTrAsNumbers, 0, sizeof(unsigned char) * n * TEST_LEN);
 
-    unsigned char* revMem = (unsigned char*) malloc(sizeof(unsigned char) * n * 256);		//revMem is a compact array (no TEST_LEN), revMem[256*i+b] = contribution of Node i to the final sum
+    unsigned char* revMem = (unsigned char*) malloc(sizeof(unsigned char) * n * 256);		// revMem is a compact array (no TEST_LEN), revMem[256*i+b] = contribution of Node i to the final sum
 	memset(revMem, 0, sizeof(unsigned char) * n * 256);
 
-	unsigned char* rev = (unsigned char*) malloc(sizeof(unsigned char) * TEST_LEN);			//to store the recovery cj (xTEST_LEN) 
+	unsigned char* rev = (unsigned char*) malloc(sizeof(unsigned char) * TEST_LEN);			// to store the recovery cj (xTEST_LEN)
 	memset(rev, 0, sizeof(unsigned char) * TEST_LEN);
+
+    printf("Buffs: \n");
+    for (i = 0; i < n; i++) {
+        printf("[Buff] %d: ", i);
+        for (int j = 0; j < TEST_LEN; j++) {
+            printf("%d, ", buffs[i][j]);
+        }
+        printf("\n");
+    }
 
  	//--------------------------------------------------------------
  	// Start of senders' computation: Node i computes the repair/helper traces 	
  	max_run_time = 0;
- 	for (i = 0; i < n; i++){
- 		if (i != j){
+ 	for (i = 0; i < n; i++) {
+ 		if (i != j) {
  			start = clock();
  			RepairTrArray[i] = repair_trace_generation(n, i, j, buffs);
 			end = clock();
@@ -813,33 +838,52 @@ unsigned char* repair_trace_optimised(int n, int j, unsigned char **buffs, doubl
     // Start of receiver computation: recovering cj from the helper/repair traces
 	
 	// First, transform repair traces into decimal numbers
-	// RepairTrAsNumbers[i*TEST_LEN test_codewordu => decimal representation of repair traces from Node i, codeword test_codeword 
+	// RepairTrAsNumbers[i*TEST_LEN test_codeword => decimal representation of
+    //  repair traces from Node i, codeword test_codeword
 	
 	start = clock();
-	int index_column_tr;
-	
+
 	// Retrieve bandwidths for different helper nodes using R table
-	for (i = 0; i < n; i++){
+	for (i = 0; i < n; i++) {
 		bw[i] = h_RTable[i][j][0];
 	}
 
-    for (i = 0; i < n; i++){
-		if (i != j){
-			idx = i * TEST_LEN;
-			for (test_codeword = 0; test_codeword < TEST_LEN; test_codeword++){
-				traces_as_number = 0; // convert bi[i] bit traces to decimal
-				// E.g., bw[i] = 4 and repair traces are (b0,b1,b2,b3) = (0,1,1,1) --> 7
-				for (a = 0; a < bw[i]; a++){
-				//for (a = bw[i]-1; a >= 0; a--){
-					traces_as_number = traces_as_number << 1;
-					traces_as_number ^= RepairTrArray[i][a*TEST_LEN+test_codeword];
-				}
-				RepairTrAsNumbers[idx++] = traces_as_number;	// idx = i*TEST_LEN + test_codeword
-    			// RepairTrAsNumbers[i*TEST_LEN + test_codeword] = traces_as_number;
-			}
-		}
-	}
-	end = clock();
+    // [DEBUG] Print bandwidths.
+    for (i = 0; i < n; i++) {
+        unsigned char bandwidth = h_RTable[i][j][0];
+        printf("[Trace] %d contains: %d.\n", i, bandwidth * TEST_LEN);
+    }
+    // for (i = 0; i < TEST_LEN; i++) {
+    //     printf("%d ", buffs[0][i]);
+    // }
+
+    // for (i = 0; i < TEST_LEN; i++) {
+    //     printf("%d ", RepairTrArray[0][i]);
+    // }
+
+    printf("\nRepairTrAsNumbers: ");
+    for (i = 0; i < n; i++) {
+        if (i != j) {
+            printf("[Trace] %d: ", i);
+            idx = i * TEST_LEN;
+            for (test_codeword = 0; test_codeword < TEST_LEN; test_codeword++){
+                traces_as_number = 0; // convert bi[i] bit traces to decimal
+                // E.g., bw[i] = 4 and repair traces are (b0,b1,b2,b3) = (0,1,1,1) --> 7
+                for (a = 0; a < bw[i]; a++){
+                    //for (a = bw[i]-1; a >= 0; a--){
+                    traces_as_number = traces_as_number << 1;
+                    traces_as_number ^= RepairTrArray[i][a*TEST_LEN+test_codeword];
+                }
+                // [DEBUG] Stored as a single decimal array.
+                RepairTrAsNumbers[idx++] = traces_as_number;	// idx = i*TEST_LEN + test_codeword
+                // RepairTrAsNumbers[i*TEST_LEN + test_codeword] = traces_as_number;
+                printf("%d, ", traces_as_number);
+            }
+        }
+        printf("\n");
+    }
+
+    end = clock();
     double elapsed_decimal = (double)(end - start)/CLOCKS_PER_SEC;
     printf("Retrieve repair traces as numbers: %f secs \n", elapsed_decimal);
 
@@ -847,8 +891,11 @@ unsigned char* repair_trace_optimised(int n, int j, unsigned char **buffs, doubl
 	// Next, use the decimal repair traces to recover cj
 	
     start = clock();
-    // revMem is a compact array (no TEST_LEN), revMem[256*i+b] = contribution of Node i to the final sum including dual basis factors (sum by column i rather than sum by row)  
-
+    // [NOTE] revMem is a compact array (no TEST_LEN),
+    //        revMem[256*i+b] = contribution of Node i to the final
+    //        sum including dual basis factors (sum by column i
+    //        rather than sum by row)
+    // [MARK] Create column trace.
     Dj = h_dtbl[j];
     for (i = 0; i < n; i++) {
         if (i != j) {
@@ -862,18 +909,39 @@ unsigned char* repair_trace_optimised(int n, int j, unsigned char **buffs, doubl
             }
         }
     }
+    printf("RevMem: \n[");
+    for (int i = 0; i < n * 256; i++) {
+        printf("%d, ", revMem[i]);
+    }
+    printf("]\n");
 
-    // [MARK] Is this where cj is constructed?
+    // [MARK] Construct cj.
     for (i = 0; i < n; i++) {
     	if (i != j) {
         	for (test_codeword = 0; test_codeword < TEST_LEN; test_codeword++) {
         		idx = i*TEST_LEN + test_codeword;
 				traces_as_number = RepairTrAsNumbers[idx];
-            	rev[test_codeword] ^= revMem[(i<<8) + traces_as_number];
+
+                unsigned char debugRevMem = revMem[(i<<8) + traces_as_number];
+                int debugRevMemSigned = debugRevMem > 127 ? debugRevMem - 256 : debugRevMem;
+
+                unsigned char debugRev = rev[test_codeword];
+                int debugRevSigned = debugRev > 127 ? debugRev - 256 : debugRev;
+
+                unsigned char debugRes = debugRev ^ debugRevMem;
+                int debugResSigned = debugRes > 127 ? debugRes - 256 : debugRes;
+
+                rev[test_codeword] = debugRes;
+                // rev[test_codeword] ^= debugRevMem;
 			}
     	}
     }
-    
+    printf("Rev: \n[");
+    for (int i = 0; i < TEST_LEN; i++) {
+        printf("%d, ", rev[i]);
+    }
+    printf("]\n");
+
     end = clock();
     double elapsed_rev = (double)(end - start)/CLOCKS_PER_SEC;
     printf("Recover cj: %f secs \n", elapsed_rev);
@@ -890,7 +958,7 @@ unsigned char* repair_trace_optimised(int n, int j, unsigned char **buffs, doubl
 	return rev;
 }
 
-
+// xor Sum of all the bits of an integer.
 // parity[m] = XOR sum of its bits, used for compute dot product of two integers as 8-bit vectors
 // Minh's function
 void precompute() {
@@ -928,6 +996,129 @@ static void gen_err_list_single_erasure(unsigned char *src_err_list,
 }
 
 int main(int argc, char *argv[])
+{
+    int re = 0;
+    int i, j, p, rtest, m, k;
+    int nerrs, nsrcerrs;
+    void *buf;
+    unsigned int decode_index[MMAX];
+    unsigned char *temp_buffs[TEST_SOURCES], *buffs[TEST_SOURCES];
+    unsigned char *encode_matrix, *decode_matrix, *invert_matrix, *g_tbls;
+    unsigned char src_in_err[TEST_SOURCES], src_err_list[TEST_SOURCES];
+    unsigned char *recov[TEST_SOURCES];
+
+    int rows, align, size;
+    unsigned char *efence_buffs[TEST_SOURCES];
+    unsigned int offset;
+    u8 *ubuffs[TEST_SOURCES];
+    u8 *temp_ubuffs[TEST_SOURCES];
+
+    printf("erasure_code_test: %dx%d \n", TEST_SOURCES, TEST_LEN);
+    // To make random data change with different calls.
+    srand(time(0));
+    // Allocate the arrays.
+    for (i = 0; i < TEST_SOURCES; i++) {
+        if (posix_memalign(&buf, 64, TEST_LEN)) {
+            printf("alloc error: Fail");
+            return -1;
+        }
+        buffs[i] = buf;
+    }
+    for (i = 0; i < TEST_SOURCES; i++) {
+        if (posix_memalign(&buf, 64, TEST_LEN)) {
+            printf("alloc error: Fail");
+            return -1;
+        }
+        temp_buffs[i] = buf;
+    }
+    // Test erasure code by encode and recovery.
+    encode_matrix = malloc(MMAX * KMAX);
+    decode_matrix = malloc(MMAX * KMAX);
+    invert_matrix = malloc(MMAX * KMAX);
+    g_tbls = malloc(KMAX * TEST_SOURCES * 32);
+    if (encode_matrix == NULL ||decode_matrix == NULL
+        || invert_matrix == NULL || g_tbls == NULL) {
+        printf("Test failure! Error with malloc\n");
+        return -1;
+    };
+    m = 9;
+    k = 6;
+    printf("Trace Repair for n = %d, k = %d \n\n", m, k);
+    if (m > MMAX || k > KMAX)
+        return -1;
+    for (i = 0; i < k; i++) { // i is the dataword lengths
+        for (j = 0; j < TEST_LEN; j++) {
+            // [MARK] File data generated here.
+            buffs[i][j] = 78;
+            // buffs[i][j] = rand();
+        }
+    }
+    // Generate encode matrix encode_matrix
+    // The matrix generated by gf_gen_rs_matrix
+    // output: encode_matrix
+    gf_gen_cauchy1_matrix(encode_matrix, m, k);
+    // Generate g_tbls from encode matrix
+    ec_init_tables(k, m - k, &encode_matrix[k * k], g_tbls);
+    // Perform matrix dot_prod for EC encoding
+    // using g_tbls from encode matrix encode_matrix
+    ec_encode_data(TEST_LEN, k, m - k, g_tbls, buffs, &buffs[k]);
+    /* TEST_LEN: Length of each block of data (vector) of source data
+    k: The number of vector source in G matrix
+    m-k: The number of output vectors to concurrently encode/decode.
+    gftbls: Pointer to array of input tables generated from coding
+    coefficients in ec_init_tables(). Must be of size 32*k*rows
+    buffs (data): Array of pointers to source input buffers
+    &buffs[k]: Arrays of pointer to coded output buffers*/
+    /*printf("\n");
+    printf("ENCODED DATA: \n");
+    for (i = 0; i < m; i++){
+        for (j = 0; j < TEST_LEN; j++){
+            printf("%u ", buffs[i][j]);
+            if((j % TEST_LEN ) == TEST_LEN-1)
+            printf("\n");
+        }
+    }*/
+    // Choose random buffers to be in erasure
+    memset(src_in_err, 0, TEST_SOURCES);
+    // Fill whole src_in_err array with 0
+    // TEST_SOURCE: Number of byte to be filled starting from src_in_err to be filled
+    // Add errorsposix_memalign
+    // gen_err_list() originally can generate between 1 and 3 erasures
+    gen_err_list_single_erasure(src_err_list, src_in_err, &nerrs, &nsrcerrs, k, m);
+
+    //------------------------------------------------------------------
+    // BEGINNING OF TRACE REPAIR (OUR METHOD)
+    clock_t start = clock();
+    unsigned char* rev;
+    int test_codeword;
+    // Precompute the parity array to speed up the computation
+    precompute();
+    double trace_repair_time_accurate;
+    // [DEBUG] nerrs is set to 1.
+    for(int err = 0; err < nerrs; err++){
+        // [DEBUG] j is the index of the faulty node.
+        // j = src_err_list[err];
+        j = 0;
+        rev = repair_trace_optimised(m, j, buffs, &trace_repair_time_accurate);
+        // Compare recovered data with original data
+        // this is check step for repair_trace_optimised
+        for (test_codeword = 0; test_codeword < TEST_LEN; test_codeword++){
+            if (rev[test_codeword] != buffs[j][test_codeword]) {
+                printf("ERROR: TraceRepair doesn't match\n");
+                exit(1);
+            }
+        }
+    }
+    clock_t finish = clock();
+    printf("-----------------------------------------\n");
+    double trace_repair_time = ((double)(finish - start) / CLOCKS_PER_SEC);
+    printf("Trace repair (per erasure): %.6f seconds\n", trace_repair_time);
+    printf("-----------------------------------------\n");
+    // END OF TRACE REPAIR
+    return 0;
+}
+
+/*int main(int argc, char *argv[])
 {
     // [MARK] What is re, rtest, m, k?
 	int re = 0;
@@ -991,10 +1182,11 @@ int main(int argc, char *argv[])
 		return -1; //exit
 
 	//printf("RANDOM DATA: \n");
-	for (i = 0; i < k; i++){ // i is the dataword lengths
-		for (j = 0; j < TEST_LEN; j++)
-		{
-			buffs[i][j] = rand();
+	for (i = 0; i < k; i++) { // i is the dataword lengths
+		for (j = 0; j < TEST_LEN; j++) {
+            // [MARK] File data generated here.
+            buffs[i][j] = 78;
+            // buffs[i][j] = rand();
 		}
 	}
 
@@ -1004,14 +1196,14 @@ int main(int argc, char *argv[])
 	gf_gen_cauchy1_matrix(encode_matrix, m, k);
 	//output: encode_matrix
 
-	/*printf("GENERATOR MATRIX: \n");
+	*//*printf("GENERATOR MATRIX: \n");
 	for(i = 0 ; i < k*m ; i++)
 	{
 		printf("%u ",encode_matrix[i]);
 		if((i % k) == k-1)
 		printf("\n");
 	}
-	printf("\n");*/
+	printf("\n");*//*
 
 
 	// Generate g_tbls from encode matrix
@@ -1022,27 +1214,27 @@ int main(int argc, char *argv[])
 	//g_tbls: Pointer to start of space for concatenated output tables
  	//generated from input coefficients.  Must be of size 32*k*rows
 
-	/*printf("Initial table: \n");
+	*//*printf("Initial table: \n");
 	for (i = 0; i < (32*(k*(m-k))); i++)
 	{
 		printf("%u ", g_tbls[i]);
 		if ((i % 32) == 31)
 		printf("\n");
-	}*/
+	}*//*
 
 	// Perform matrix dot_prod for EC encoding
 	// using g_tbls from encode matrix encode_matrix
 
 	ec_encode_data(TEST_LEN, k, m - k, g_tbls, buffs, &buffs[k]);
 
-	/* TEST_LEN: Length of each block of data (vector) of source data
+	*//* TEST_LEN: Length of each block of data (vector) of source data
 	k: The number of vector source in G matrix
 	m-k: The number of output vectors to concurrently encode/decode.
 	gftbls: Pointer to array of input tables generated from coding
 	coefficients in ec_init_tables(). Must be of size 32*k*rows
 	buffs (data): Array of pointers to source input buffers
-	&buffs[k]: Arrays of pointer to coded output buffers*/
-	/*printf("\n");
+	&buffs[k]: Arrays of pointer to coded output buffers*//*
+	*//*printf("\n");
 	printf("ENCODED DATA: \n");
 	for (i = 0; i < m; i++){
 		for (j = 0; j < TEST_LEN; j++){
@@ -1051,7 +1243,7 @@ int main(int argc, char *argv[])
 			printf("\n");
 		}
 	}
-	*/
+	*//*
 
 
 	// Choose random buffers to be in erasure
@@ -1112,7 +1304,7 @@ int main(int argc, char *argv[])
 	}
 
 	//printf("\n");
-	/*
+	*//*
 	//Print error list and non-erasure index
 	printf(" - erase list = ");
 	for (j = 0; j < nerrs; j++)
@@ -1120,8 +1312,8 @@ int main(int argc, char *argv[])
 	printf("\n - Index = ");
 	for (p = 0; p < k; p++){
 		printf(" %d", decode_index[p]);
-	}*/
-	/*
+	}*//*
+	*//*
 	printf("\n \n");
 	printf("nsrcerrs (number of original data error): %u \n", nsrcerrs);
 	//mean the data are erasured that is in original data. Eg: lost data where<k.
@@ -1136,11 +1328,11 @@ int main(int argc, char *argv[])
 		if ((i%k) == k-1)
 		printf("\n");
 	}
-	printf("\n");*/
+	printf("\n");*//*
 
 
 	//Generate decode matrix
-	/*printf("DECODE MATRIX: \n");
+	*//*printf("DECODE MATRIX: \n");
 	for (i = 0; i < nsrcerrs; i++){
 		for(j = 0; j <k; j++ ){
 			printf("%u ", decode_matrix[k*i + j]);
@@ -1154,7 +1346,7 @@ int main(int argc, char *argv[])
 			printf("\n");
 		}
 	}
-	printf("\n");*/
+	printf("\n");*//*
 
 
 	// Pack recovery array as list of valid sources
@@ -1187,4 +1379,4 @@ int main(int argc, char *argv[])
 	printf("%u\n", src_err_list[nerrs-1]);
 
 	return 0;
-}
+}*/

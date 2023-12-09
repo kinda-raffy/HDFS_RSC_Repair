@@ -3,11 +3,11 @@ package org.apache.hadoop.io.erasurecode.coder.util.tracerepair;
 import java.util.ArrayList;
 import java.util.List;
 
-public class RecoveryTable96 {
+public class RecoveryTable96String {
 
-    private static List<List> RTable_9_6 = new ArrayList<List>();
+    private static List<List> RTable_9_6 = new ArrayList<>();
 
-    public RecoveryTable96() {
+    public RecoveryTable96String() {
 
         List row1 = new ArrayList();
         row1.add("");
@@ -42,7 +42,6 @@ public class RecoveryTable96 {
         row3.add("2, 1, 3, 3, 2, 3, 2, 0, 0");
         row3.add("4, 4, 12, 12, 8, 2, 5, 0, 0");
 
-
         List row4 = new ArrayList();
         row4.add("4, 0, 0, 1, 5, 6, 8, 15, 3");
         row4.add("6, 2, 10, 40, 12, 45, 18, 23, 33");
@@ -53,7 +52,6 @@ public class RecoveryTable96 {
         row4.add("4, 8, 4, 0, 0, 0, 0, 2, 13");
         row4.add("4, 2, 8, 0, 0, 9, 4, 8, 10");
         row4.add("4, 1, 2, 2, 3, 8, 13, 8, 13");
-
 
         List row5 = new ArrayList();
         row5.add("2, 1, 2, 0, 0, 2, 3, 2, 3");
@@ -110,7 +108,6 @@ public class RecoveryTable96 {
         row9.add("4, 4, 1, 0, 0, 0, 0, 12, 3");
         row9.add("");
 
-
         RTable_9_6.add(row1);
         RTable_9_6.add(row2);
         RTable_9_6.add(row3);
@@ -120,12 +117,8 @@ public class RecoveryTable96 {
         RTable_9_6.add(row7);
         RTable_9_6.add(row8);
         RTable_9_6.add(row9);
-
-
     }
     public Object getElement(int i, int j){
         return RTable_9_6.get(i).get(j);
     }
-
-
 }

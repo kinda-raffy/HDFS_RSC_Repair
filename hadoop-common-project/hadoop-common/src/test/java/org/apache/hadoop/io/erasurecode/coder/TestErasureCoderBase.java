@@ -89,23 +89,22 @@ public abstract class TestErasureCoderBase extends TestCoderBase {
     ErasureCodingStep codingStep;
     codingStep = encoder.calculateCoding(blockGroup);
     try {
+      // [DEBUG] Populates the parity blocks.
       performCodingStep(codingStep);
     } catch (IOException e) {
-      fail("Should not expect IOException: " + e.getMessage());
+      fail("IOException received during encoding: " + e.getMessage());
     }
     // Erase specified sources but return copies of them for later comparing
     TestBlock[] backupBlocks = backupAndEraseBlocks(clonedDataBlocks, parityBlocks);
-
-    // Decode
+    // Perform decoding.
     blockGroup = new ECBlockGroup(clonedDataBlocks, blockGroup.getParityBlocks());
     codingStep = decoder.calculateCoding(blockGroup);
     try {
       performCodingStep(codingStep);
     } catch (IOException e) {
-      fail("Should not expect IOException: " + e.getMessage());
+      fail("IOException received during decoding: " + e.getMessage());
     }
-
-    // Compare
+    // Compare decoding with original data.
     compareAndVerify(backupBlocks, codingStep.getOutputBlocks());
   }
 
@@ -127,17 +126,15 @@ public abstract class TestErasureCoderBase extends TestCoderBase {
       for (int j = 0; j < inputBlocks.length; ++j) {
         inputChunks[j] = ((TestBlock) inputBlocks[j]).chunks[i];
       }
-
       // Pretend that we allocate and will write output results to the blocks.
       for (int j = 0; j < outputBlocks.length; ++j) {
         outputChunks[j] = allocateOutputChunk();
         ((TestBlock) outputBlocks[j]).chunks[i] = outputChunks[j];
       }
-
-      // Given the input chunks and output chunk buffers, just call it !
+      // Given the input chunks and output chunk buffers, just call it!
       codingStep.performCoding(inputChunks, outputChunks);
     }
-
+    // [DEBUG] Does nothing.
     codingStep.finish();
   }
 
@@ -158,7 +155,6 @@ public abstract class TestErasureCoderBase extends TestCoderBase {
     if (encoder == null) {
       encoder = createEncoder();
     }
-
     if (decoder == null) {
       decoder = createDecoder();
     }
@@ -172,7 +168,11 @@ public abstract class TestErasureCoderBase extends TestCoderBase {
     ErasureCoder encoder;
     try {
       ErasureCoderOptions options = new ErasureCoderOptions(
-          numDataUnits, numParityUnits, allowChangeInputs, allowDump);
+          numDataUnits,
+          numParityUnits,
+          allowChangeInputs,
+          allowDump
+      );
       Constructor<? extends ErasureCoder> constructor =
           (Constructor<? extends ErasureCoder>)
               encoderClass.getConstructor(ErasureCoderOptions.class);
@@ -180,7 +180,6 @@ public abstract class TestErasureCoderBase extends TestCoderBase {
     } catch (Exception e) {
       throw new RuntimeException("Failed to create encoder", e);
     }
-
     encoder.setConf(getConf());
     return encoder;
   }
@@ -210,7 +209,7 @@ public abstract class TestErasureCoderBase extends TestCoderBase {
    * Prepare a block group for encoding.
    * @return
    */
-  protected ECBlockGroup prepareBlockGroupForEncoding() {
+  protected ECBlockGroup prepareBlockGroupForEncoding( ) {
     ECBlock[] dataBlocks = new TestBlock[numDataUnits];
     ECBlock[] parityBlocks = new TestBlock[numParityUnits];
 
@@ -245,25 +244,24 @@ public abstract class TestErasureCoderBase extends TestCoderBase {
    * @param dataBlocks
    * @return clone of erased dataBlocks
    */
-  protected TestBlock[] backupAndEraseBlocks(TestBlock[] dataBlocks,
-                                             TestBlock[] parityBlocks) {
-    TestBlock[] toEraseBlocks = new TestBlock[erasedDataIndexes.length +
-                                          erasedParityIndexes.length];
+  protected TestBlock[] backupAndEraseBlocks(
+    TestBlock[] dataBlocks,
+    TestBlock[] parityBlocks
+  ) {
+    TestBlock[] toEraseBlocks
+            = new TestBlock[erasedDataIndexes.length + erasedParityIndexes.length];
     int idx = 0;
     TestBlock block;
-
     for (int i = 0; i < erasedDataIndexes.length; i++) {
       block = dataBlocks[erasedDataIndexes[i]];
-      toEraseBlocks[idx ++] = cloneBlockWithData(block);
+      toEraseBlocks[idx++] = cloneBlockWithData(block);
       eraseDataFromBlock(block);
     }
-
     for (int i = 0; i < erasedParityIndexes.length; i++) {
       block = parityBlocks[erasedParityIndexes[i]];
-      toEraseBlocks[idx ++] = cloneBlockWithData(block);
+      toEraseBlocks[idx++] = cloneBlockWithData(block);
       eraseDataFromBlock(block);
     }
-
     return toEraseBlocks;
   }
 

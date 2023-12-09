@@ -320,7 +320,7 @@ public class Configuration implements Iterable<Map.Entry<String,String>>,
   /**
    * Configuration objects.
    */
-  private static final WeakHashMap<Configuration,Object> REGISTRY = 
+  private static final WeakHashMap<Configuration, Object> REGISTRY =
     new WeakHashMap<Configuration,Object>();
 
   /**

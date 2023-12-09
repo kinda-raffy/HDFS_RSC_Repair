@@ -78,11 +78,6 @@ public class RSRawDecoder extends RawErasureDecoder {
     CoderUtil.resetOutputBuffers(decodingState.outputs,
         decodingState.decodeLength);
     prepareDecoding(decodingState.inputs, decodingState.erasedIndexes);
-
-    ByteBuffer[] inputs = decodingState.inputs;
-    ourlog.write(this, "received data length: " + inputs.length);
-    ourlog.write(this, "received data " + 0 + ": " + Arrays.toString(Arrays.copyOfRange(inputs[0].array(), 0, 30)));
-
     ByteBuffer[] realInputs = new ByteBuffer[getNumDataUnits()];
     for (int i = 0; i < getNumDataUnits(); i++) {
       realInputs[i] = decodingState.inputs[validIndexes[i]];
@@ -97,21 +92,14 @@ public class RSRawDecoder extends RawErasureDecoder {
     CoderUtil.resetOutputBuffers(decodingState.outputs,
         decodingState.outputOffsets, dataLen);
     prepareDecoding(decodingState.inputs, decodingState.erasedIndexes);
-
-    byte[][] inputs = decodingState.inputs;
-    ourlog.write(this, "received data length: " + inputs.length);
-    ourlog.write(this, "received data " + 0 + ": " + Arrays.toString(Arrays.copyOfRange(inputs[0], 0, 30)));
-
     byte[][] realInputs = new byte[getNumDataUnits()][];
     int[] realInputOffsets = new int[getNumDataUnits()];
     for (int i = 0; i < getNumDataUnits(); i++) {
       realInputs[i] = decodingState.inputs[validIndexes[i]];
       realInputOffsets[i] = decodingState.inputOffsets[validIndexes[i]];
     }
-    ourlog.write("\n Inside RSRawDecoder: calling doDecode ByteArray...");
     RSUtil.encodeData(gfTables, dataLen, realInputs, realInputOffsets,
         decodingState.outputs, decodingState.outputOffsets);
-    ourlog.write("\n Inside RSRawDecoder: after decoding with RSUtil.encodeData call...");
   }
 
   private <T> void prepareDecoding(T[] inputs, int[] erasedIndexes) {

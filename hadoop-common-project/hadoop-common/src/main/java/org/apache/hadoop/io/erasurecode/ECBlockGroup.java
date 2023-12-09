@@ -60,16 +60,12 @@ public class ECBlockGroup {
    */
   public int getErasedCount() {
     int erasedCount = 0;
-
     for (ECBlock dataBlock : dataBlocks) {
       if (dataBlock.isErased()) erasedCount++;
     }
-
     for (ECBlock parityBlock : parityBlocks) {
       if (parityBlock.isErased()) erasedCount++;
     }
-
     return erasedCount;
   }
-
 }

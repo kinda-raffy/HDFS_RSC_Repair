@@ -44,9 +44,12 @@ public class ErasureDecodingStep implements ErasureCodingStep {
    * @param outputBlocks outputBlocks.
    * @param rawDecoder rawDecoder.
    */
-  public ErasureDecodingStep(ECBlock[] inputBlocks, int[] erasedIndexes,
-                             ECBlock[] outputBlocks,
-                             RawErasureDecoder rawDecoder) {
+  public ErasureDecodingStep(
+    ECBlock[] inputBlocks,
+    int[] erasedIndexes,
+    ECBlock[] outputBlocks,
+    RawErasureDecoder rawDecoder
+  ) {
     this.inputBlocks = inputBlocks;
     this.outputBlocks = outputBlocks;
     this.erasedIndexes = erasedIndexes;

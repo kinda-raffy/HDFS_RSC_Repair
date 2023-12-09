@@ -53,7 +53,6 @@ public class ErasureEncodingStep implements ErasureCodingStep {
   @Override
   public void performCoding(ECChunk[] inputChunks, ECChunk[] outputChunks)
       throws IOException {
-    ourlog.write("\n Inside ErasureEncodingStep: before calling RawErasureEncoder");
     rawEncoder.encode(inputChunks, outputChunks);
   }
 

@@ -69,15 +69,15 @@ public abstract class ErasureDecoder extends Configured
    * @return input blocks
    */
   protected ECBlock[] getInputBlocks(ECBlockGroup blockGroup) {
-    ECBlock[] inputBlocks = new ECBlock[getNumDataUnits() +
-            getNumParityUnits()];
-
-    System.arraycopy(blockGroup.getDataBlocks(), 0, inputBlocks,
-            0, getNumDataUnits());
-
+    ECBlock[] inputBlocks
+            = new ECBlock[getNumDataUnits() + getNumParityUnits()];
+    System.arraycopy(
+      blockGroup.getDataBlocks(),
+      0, inputBlocks, 0, getNumDataUnits()
+    );
+    // [MARK] Parity blocks are appended to the input over here.
     System.arraycopy(blockGroup.getParityBlocks(), 0, inputBlocks,
             getNumDataUnits(), getNumParityUnits());
-
     return inputBlocks;
   }
 

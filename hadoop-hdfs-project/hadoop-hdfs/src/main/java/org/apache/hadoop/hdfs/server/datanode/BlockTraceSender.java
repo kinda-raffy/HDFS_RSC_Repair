@@ -684,14 +684,12 @@ class BlockTraceSender implements java.io.Closeable {
                 // helperTraces.set(p,traceBitsXor);
                 p++;
             }
-            //ourlog.write("To the next byte of the codeword ...");
+            // ourlog.write("To the next byte of the codeword ...");
         }
-//        ourlog.write(this, datanode.getDatanodeUuid(), "compute traces: " + codeSymbols.length +
-//                " - lostBlockIndex: " + lostBlockIndex + " - helperNodeIndex: " + helperNodeIndex + " - helperTraces: " + helperTraces.length);
-//        ourlog.write("Helper trace boolean array size, after all traces computed: "+helperTraces.length);
+       // ourlog.write(this, datanode.getDatanodeUuid(), "compute traces: " + codeSymbols.length +
+       //         " - lostBlockIndex: " + lostBlockIndex + " - helperNodeIndex: " + helperNodeIndex + " - helperTraces: " + helperTraces.length);
+       // ourlog.write("Helper trace boolean array size, after all traces computed: "+helperTraces.length);
         return(helperTraces);
-
-
     }
 
     /**

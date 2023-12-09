@@ -45,7 +45,7 @@ import java.nio.ByteBuffer;
 public abstract class RawErasureEncoder {
 
   private final ErasureCoderOptions coderOptions;
-  private static OurECLogger ourlog = OurECLogger.getInstance();
+  protected static OurECLogger ourLog = OurECLogger.getInstance();
 
   public RawErasureEncoder(ErasureCoderOptions coderOptions) {
     this.coderOptions = coderOptions;
@@ -69,8 +69,9 @@ public abstract class RawErasureEncoder {
    */
   public void encode(ByteBuffer[] inputs, ByteBuffer[] outputs)
       throws IOException {
-    ByteBufferEncodingState bbeState = new ByteBufferEncodingState(
-        this, inputs, outputs);
+    // [DEBUG] Inputs: data; Outputs: parity.
+    ByteBufferEncodingState bbeState
+            = new ByteBufferEncodingState(this, inputs, outputs);
 
     boolean usingDirectBuffer = bbeState.usingDirectBuffer;
     int dataLen = bbeState.encodeLength;

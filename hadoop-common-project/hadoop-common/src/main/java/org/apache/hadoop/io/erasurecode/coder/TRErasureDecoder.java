@@ -42,14 +42,15 @@ public class TRErasureDecoder extends ErasureDecoder {
 
     @Override
     protected ErasureCodingStep prepareDecodingStep(final ECBlockGroup blockGroup) {
-
         ECBlock[] inputBlocks = getInputBlocks(blockGroup);
-        ourlog.write("Inside TR EC Decoder, fetched input block groups");
         ECBlock[] outputBlocks = getOutputBlocks(blockGroup);
-
         RawErasureDecoder rawDecoder = checkCreateTRRawDecoder();
-        return new ErasureDecodingStep(inputBlocks,
-                getErasedIndexes(inputBlocks), outputBlocks, rawDecoder);
+        return new ErasureDecodingStep(
+            inputBlocks,
+            getErasedIndexes(inputBlocks),
+            outputBlocks,
+            rawDecoder
+        );
     }
 
     private RawErasureDecoder checkCreateTRRawDecoder() {
