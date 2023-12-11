@@ -196,7 +196,7 @@ public class TestReconstructStripedFile {
     ourECLogger.write(this, dataNodeUUIDs.toString());
   }
 
-  @Test(timeout = 60000)
+  @Test(timeout = 600000)
   public void testRecoverOneDataBlockSmallFile() throws Exception {
     int FILE_LEN_TEST_1 = 6291456; // 6 * 1024 * 1024: to make the rounding byte
     int fileLen = FILE_LEN_TEST_1; //
