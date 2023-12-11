@@ -439,7 +439,7 @@ public class TestReconstructStripedFile {
     assertEquals(locatedBlocks.getFileLength(), fileLen);
 
     LocatedStripedBlock lastBlock =
-            (LocatedStripedBlock)locatedBlocks.getLastLocatedBlock();
+            (LocatedStripedBlock) locatedBlocks.getLastLocatedBlock();
 
     DatanodeInfo[] storageInfos = lastBlock.getLocations();
     byte[] indices = lastBlock.getBlockIndices();

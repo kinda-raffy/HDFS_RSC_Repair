@@ -31,9 +31,7 @@ import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 
 import org.apache.hadoop.fs.ChecksumException;
 import org.apache.hadoop.hdfs.DFSUtilClient;
@@ -49,11 +47,13 @@ import org.apache.hadoop.hdfs.server.datanode.fsdataset.ReplicaInputStreams;
 import org.apache.hadoop.hdfs.util.DataTransferThrottler;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.io.ReadaheadPool.ReadaheadRequest;
+import org.apache.hadoop.io.erasurecode.coder.util.tracerepair.HelperTable;
 import org.apache.hadoop.net.SocketOutputStream;
 import org.apache.hadoop.util.AutoCloseableLock;
 import org.apache.hadoop.util.DataChecksum;
 import org.apache.hadoop.tracing.TraceScope;
 import org.apache.hadoop.hdfs.server.datanode.erasurecode.HelperTable96;
+
 
 import static org.apache.hadoop.io.nativeio.NativeIO.POSIX.POSIX_FADV_DONTNEED;
 import static org.apache.hadoop.io.nativeio.NativeIO.POSIX.POSIX_FADV_SEQUENTIAL;
@@ -105,6 +105,9 @@ import org.apache.hadoop.util.OurTestLogger;
  *  no checksum error, it replies to DataNode with OP_STATUS_CHECKSUM_OK.
  */
 class BlockTraceSender implements java.io.Closeable {
+
+    // [FIXME] Get rid of duplicated code.
+
     static final Logger LOG = DataNode.LOG;
     private static final OurECLogger ourlog = OurECLogger.getInstance();
 
@@ -138,7 +141,7 @@ class BlockTraceSender implements java.io.Closeable {
     private final ExtendedBlock block;
 
     /** InputStreams and file descriptors to read block/checksum. */
-    private ReplicaInputStreams ris;
+    private ReplicaInputStreams replicaInputStreams;
     /** updated while using transferTo() */
     private long blockInPosition = -1;
     /** Checksum utility */
@@ -196,8 +199,7 @@ class BlockTraceSender implements java.io.Closeable {
     /** The index of this helper node of this trace repair erasure code setting*/
     private final int helperNodeIndex;
 
-    /** to access entries of the Helper table */
-    private  HelperTable96 helperTable = new HelperTable96();
+    private final HelperTable helperTable = new HelperTable();
 
     @VisibleForTesting
     static long CACHE_DROP_INTERVAL_BYTES = 1024 * 1024; // 1MB
@@ -207,6 +209,7 @@ class BlockTraceSender implements java.io.Closeable {
      */
     private static final long LONG_READ_THRESHOLD_BYTES = 256 * 1024;
 
+    private byte[] preComputedParity = new byte[256];
 
     /**
      * Constructor
@@ -226,9 +229,9 @@ class BlockTraceSender implements java.io.Closeable {
                      boolean sendChecksum, DataNode datanode, String clientTraceFmt,
                      CachingStrategy cachingStrategy, int lostNodeIndex, int helperNodeIndex, int dataBlkNum, int parityBlkNum)
             throws IOException {
+        FsVolumeReference volumeRef;
         InputStream blockIn = null;
         DataInputStream checksumIn = null;
-        FsVolumeReference volumeRef = null;
         this.fileIoProvider = datanode.getFileIoProvider();
         try {
             this.block = block;
@@ -237,11 +240,9 @@ class BlockTraceSender implements java.io.Closeable {
             this.clientTraceFmt = clientTraceFmt;
             this.dataBlkNum = dataBlkNum;
             this.parityBlkNum = parityBlkNum;
-            //this.totalBlocks = dataBlkNum + parityBlkNum;
             this.lostNodeIndex = lostNodeIndex;
             this.helperNodeIndex = helperNodeIndex;
             this.length = length;
-
             double lengthInMb = length / (1024.0 * 1024.0);
             ourlog.write(this, datanode.getDatanodeUuid(), " init block trace sender - lostNodeIndex: " + lostNodeIndex +
                     " - helperNodeIndex: " + helperNodeIndex + " " + lengthInMb);
@@ -260,7 +261,6 @@ class BlockTraceSender implements java.io.Closeable {
                         this.dropCacheBehindLargeReads =
                                 cachingStrategy.getDropBehind().booleanValue();
             }
-
             /*
              * Similarly, if readahead was explicitly requested, we always do it.
              * Otherwise, we read ahead based on the DataNode settings, and only
@@ -274,14 +274,12 @@ class BlockTraceSender implements java.io.Closeable {
                 this.readaheadLength = cachingStrategy.getReadahead().longValue();
             }
             this.datanode = datanode;
-
             if (verifyChecksum) {
                 // To simplify implementation, callers may not specify verification
                 // without sending.
                 Preconditions.checkArgument(sendChecksum,
                         "If verifying checksum, currently must also send it.");
             }
-
             // if there is a append write happening right after the BlockSender
             // is constructed, the last partial checksum maybe overwritten by the
             // append, the BlockSender need to use the partial checksum before
@@ -304,7 +302,6 @@ class BlockTraceSender implements java.io.Closeable {
                 chunkChecksum = getPartialChunkChecksumForFinalized(
                         (FinalizedReplica)replica);
             }
-
             if (replica.getGenerationStamp() < block.getGenerationStamp()) {
                 throw new IOException("Replica gen stamp < block genstamp, block="
                         + block + ", replica=" + replica);
@@ -323,12 +320,10 @@ class BlockTraceSender implements java.io.Closeable {
             if (DataNode.LOG.isDebugEnabled()) {
                 DataNode.LOG.debug("block=" + block + ", replica=" + replica);
             }
-
             // transferToFully() fails on 32 bit platforms for block sizes >= 2GB,
             // use normal transfer in those cases
             this.transferToAllowed = datanode.getDnConf().transferToAllowed &&
                     (!is32Bit || length <= Integer.MAX_VALUE);
-
             // Obtain a reference before reading data
             volumeRef = datanode.data.getVolume(block).obtainReference();
             /*
@@ -351,7 +346,6 @@ class BlockTraceSender implements java.io.Closeable {
                             throw new FileNotFoundException("Meta-data not found for " +
                                     block);
                         }
-
                         // The meta file will contain only the header if the NULL checksum
                         // type was used, or if the replica was written to transient storage.
                         // Also, when only header portion of a data packet was transferred
@@ -387,7 +381,6 @@ class BlockTraceSender implements java.io.Closeable {
                     }
                 }
             }
-
             if (csum == null) {
                 // The number of bytes per checksum here determines the alignment
                 // of reads: we always start reading at a checksum chunk boundary,
@@ -396,33 +389,10 @@ class BlockTraceSender implements java.io.Closeable {
                 // is likely to result in minimal extra IO.
                 csum = DataChecksum.newDataChecksum(DataChecksum.Type.NULL, 512);
             }
-
-            // ourlog.write("Checksum Type: "+csum.getChecksumType());
-            // ourlog.write("Bytes Per Checksum: "+csum.getBytesPerChecksum());
-
-            /*
-             * If chunkSize is very large, then the metadata file is mostly
-             * corrupted. For now just truncate bytesPerchecksum to blockLength.
-             */
-
-            //commented for trace repair, we ignore checksums
-         /*   int size = csum.getBytesPerChecksum();
-            if (size > 10*1024*1024 && size > replicaVisibleLength) {
-                csum = DataChecksum.newDataChecksum(csum.getChecksumType(),
-                        Math.max((int)replicaVisibleLength, 10*1024*1024));
-                size = csum.getBytesPerChecksum();
-            } */
-            //chunkSize = size;
-
-            //chunkSize = 0;
             checksum = csum;
-
-            //checksumSize = checksum.getChecksumSize();
-            //For trace repair, we do not care about checksums
             checksumSize = 0;
             length = length < 0 ? replicaVisibleLength : length;
-
-            // end is either last byte on disk or the length for which we have a
+            // End is either the last byte on disk or the length for which we have a
             // checksum
             long end = chunkChecksum != null ? chunkChecksum.getDataLength()
                     : replica.getBytesOnDisk();
@@ -434,9 +404,6 @@ class BlockTraceSender implements java.io.Closeable {
                         ":sendBlock() : " + msg);
                 throw new IOException(msg);
             }
-
-            //    ourlog.write("startOffset: "+startOffset);
-            //  ourlog.write("length: "+length);
             // Ensure read offset is position at the beginning of chunk
             offset = startOffset - (startOffset % chunkSize);
             if (length >= 0) {
@@ -454,7 +421,6 @@ class BlockTraceSender implements java.io.Closeable {
                 }
             }
             endOffset = end;
-
             // seek to the right offsets
             if (offset > 0 && checksumIn != null) {
                 long checksumSkip = (offset / chunkSize) * checksumSize;
@@ -470,7 +436,7 @@ class BlockTraceSender implements java.io.Closeable {
                 DataNode.LOG.debug("replica=" + replica);
             }
             blockIn = datanode.data.getBlockInputStream(block, offset); // seek to offset
-            ris = new ReplicaInputStreams(
+            replicaInputStreams = new ReplicaInputStreams(
                     blockIn, checksumIn, volumeRef, fileIoProvider);
         } catch (IOException ioe) {
             IOUtils.closeStream(this);
@@ -478,39 +444,15 @@ class BlockTraceSender implements java.io.Closeable {
             org.apache.commons.io.IOUtils.closeQuietly(checksumIn);
             throw ioe;
         }
+        preCompute();
     }
 
-    /**
-     * Function to return the bit at some position from a byte
-     * @param b the input byte
-     * @param position the position to get the bit from
-     */
-
-    private boolean getBit(byte b, int position){
-
-        return (1 == ((b >> position) & 1));
-    }
-
-
-    /**
-     * Function to return all set bit positions of a number
-     * @param inputNumber an integer input
-     */
-    private List<Integer> getBitPositions(int inputNumber) {
-        List<Integer> positions = new ArrayList<>();
-        int index = 0; // start at bit index 0
-
-        while (inputNumber != 0) { // If the number is 0, no bits are set
-
-            // check if the bit at the current index 0 is set
-            if ((inputNumber & 1) == 1)
-                // it is, save this bit index to a List.
-                positions.add(index);
-            // advance to the next bit position to check
-            inputNumber = inputNumber >> 1; // shift all bits one position to the right
-            index = index + 1;              // we have to now look at the next index.
+    private void preCompute() {
+        int i;
+        preComputedParity[0] = 0;
+        for (i = 1; i < 256; i++) {
+            preComputedParity[i] = (byte) (preComputedParity[i >> 1] ^ (i & 1));
         }
-        return positions;
     }
 
     private ChunkChecksum getPartialChunkChecksumForFinalized(
@@ -547,13 +489,14 @@ class BlockTraceSender implements java.io.Closeable {
     /**
      * close opened files.
      */
+    @SuppressWarnings("DuplicatedCode")
     @Override
     public void close() throws IOException {
-        if (ris.getDataInFd() != null &&
+        if (replicaInputStreams.getDataInFd() != null &&
                 ((dropCacheBehindAllReads) ||
                         (dropCacheBehindLargeReads && isLongRead()))) {
             try {
-                ris.dropCacheBehindReads(block.getBlockName(), lastCacheDropOffset,
+                replicaInputStreams.dropCacheBehindReads(block.getBlockName(), lastCacheDropOffset,
                         offset - lastCacheDropOffset, POSIX_FADV_DONTNEED);
             } catch (Exception e) {
                 LOG.warn("Unable to drop cache on file close", e);
@@ -564,17 +507,17 @@ class BlockTraceSender implements java.io.Closeable {
         }
 
         try {
-            ris.closeStreams();
+            replicaInputStreams.closeStreams();
         } finally {
-            IOUtils.closeStream(ris);
-            ris = null;
+            IOUtils.closeStream(replicaInputStreams);
+            replicaInputStreams = null;
         }
     }
 
     private static Replica getReplica(ExtendedBlock block, DataNode datanode)
             throws ReplicaNotFoundException {
-        Replica replica = datanode.data.getReplica(block.getBlockPoolId(),
-                block.getBlockId());
+        Replica replica = datanode.data.getReplica(
+                block.getBlockPoolId(), block.getBlockId());
         if (replica == null) {
             throw new ReplicaNotFoundException(block);
         }
@@ -625,72 +568,17 @@ class BlockTraceSender implements java.io.Closeable {
         return ioe;
     }
 
-
-
-    /**
-     * Function to compute helper traces of the bytes from this helper node
-     * Runs at each of the helper node and sends to the worker node for recovery
-     * @param codeSymbols the code symbol byte array corresponding to the block contents
-     * @param lostBlockIndex the erased node index
-     * @return the traces of all bytes from this block
-     * @throws IOException
+    /** [NOTE]
+     * 1. File put to Hadoop
+     * 2. Hadoop put it into 9 machines
+     * 3. 1 machine down
+     * 4. Each remaining machine read the data in its machine
+     * 5. Each remaining machine encode the data it reads and sends it over as a packet
+     * 6. The receiver receives the encoded data as the packet
+     * 7. The receiver puts the decoded data into 8 byte arrays. DONE
+     * 8. The receiver decodes the whole file together
+     * 9. The receiver combines all the files
      */
-
-    // 1. File put to Hadoop
-    // 2. Hadoop put it into 9 machines
-    // 3. 1 machine down
-    // 4. Each remaining machine read the data in its machine
-    // 5. Each remaining machine encode the data it reads and sends it over as a packet
-    // 6. The receiver receives the encoded data as the packet
-    // 7. The receiver puts the decoded data into 8 byte arrays. DONE
-    // 8. The receiver decodes the whole file together
-    // 9. The receiver combines all the files
-    private boolean[] computeTraces(byte[] codeSymbols, int lostBlockIndex, int helperNodeIndex) throws IOException {
-//        ourlog.write(this, datanode.getDatanodeUuid() ,"sample byte: " + codeSymbols[0]);
-
-        int i = lostBlockIndex;
-//        ourlog.write("Lost Block Index is: "+lostBlockIndex);
-        int k = 0;
-        int j = helperNodeIndex;
-
-        Object element = helperTable.getElement(j,i);
-        String s = element.toString();
-        String[] elements = s.split(",");
-        int traceBandwidth = Integer.parseInt(elements[0]);
-
-        //The boolean array that will hold the trace bits from all the code symbols of this helper
-        int sizeOfBoolArray = codeSymbols.length*traceBandwidth; //number of bytes times traceBandwidth
-        boolean[] helperTraces = new boolean[sizeOfBoolArray];
-
-        //Iterate though all bytes of the byte array which has the block's data
-        //for each byte, find the helper trace, add it to the helperTraces bitset
-        int p =0;
-        for(byte codeSymbol : codeSymbols){
-            for (int l = 1; l <= traceBandwidth; l++) {
-                String helperString = elements[l].toString();
-                Integer helperInt = Integer.parseInt(helperString.trim());
-
-                //Find the set bit positions of the helper table element
-                List<Integer> positions = getBitPositions(helperInt);
-
-                boolean traceBitsXor = false;
-
-                for(Integer position : positions){
-                    //XOR all bits of the codeword symbol at the set positions of H table element
-                    traceBitsXor = traceBitsXor ^ getBit(codeSymbol, position);
-                }
-                helperTraces[p] = traceBitsXor;
-                //  ourlog.write("Helper trace boolean array size: "+helperTraces.length);
-                // helperTraces.set(p,traceBitsXor);
-                p++;
-            }
-            // ourlog.write("To the next byte of the codeword ...");
-        }
-       // ourlog.write(this, datanode.getDatanodeUuid(), "compute traces: " + codeSymbols.length +
-       //         " - lostBlockIndex: " + lostBlockIndex + " - helperNodeIndex: " + helperNodeIndex + " - helperTraces: " + helperTraces.length);
-       // ourlog.write("Helper trace boolean array size, after all traces computed: "+helperTraces.length);
-        return(helperTraces);
-    }
 
     /**
      * @param datalen Length of data
@@ -729,6 +617,28 @@ class BlockTraceSender implements java.io.Closeable {
         return retVal;
     }
 
+    @SuppressWarnings("DuplicatedCode")
+    protected byte[] repairTraceGeneration(
+        int nodeIndex, int erasedNodeIndex,
+        byte[] inputs, int encodeLength
+    ) {
+        assert(nodeIndex != erasedNodeIndex);
+        byte bw = helperTable.getByte_9_6(nodeIndex, erasedNodeIndex, 0);
+        byte[] repairTrace = new byte[bw * encodeLength];
+        byte[] H = helperTable.getRow_9_6(nodeIndex, erasedNodeIndex);
+        byte[] Hij = new byte[H.length - 1];
+        System.arraycopy(H, 1, Hij, 0, Hij.length);
+        int idx = 0;
+        for (int a = 0; a < bw; a++) {
+            for (int testCodeWord = 0; testCodeWord < encodeLength; testCodeWord++) {
+                byte parityCalculation = (byte) (Hij[a] & (inputs[testCodeWord]));
+                int parityIndex = parityCalculation & 0xFF;
+                repairTrace[idx++] = preComputedParity[parityIndex];
+            }
+        }
+        return repairTrace;
+    }
+
     /**
      * Sends a packet with up to maxChunks chunks of data.
      *
@@ -740,55 +650,16 @@ class BlockTraceSender implements java.io.Closeable {
      */
     private int[] sendPacketTraceReader(ByteBuffer packetBuffer, int maxChunks, OutputStream out,
                                         boolean transferTo, DataTransferThrottler throttler) throws IOException {
-        // dataLen: the amount of data reading from the file system
-        // headerLen: the length of the header of the packet
-        // helperTraceByteLen: the length of the actual data after encoded
-
         long normalDataReadingLen = chunkSize * (long) maxChunks;
         int dataLen = (int) Math.min(endOffset - offset,
                 normalDataReadingLen);
-        /**
-         * Khang:
-         * The number of bytes in HelperTraceByte seems to be calculated correctly
-         */
-
-        //construct a temporary byte array to read the whole block contents into and then compute trace of the bytes in the array
-        byte[] tmpPktBuf = new byte[dataLen];
-
-        // buf The buffer to fill
-        // off offset from the buffer
-        // len the length of bytes to read
-        ris.readDataFully(tmpPktBuf, 0, dataLen);
-//        ourlog.write(this, this.datanode.getDatanodeUuid(), "helperNodeIndex: " + helperNodeIndex + " - seqNo: " + seqno +
-//                " tmpPktBuf: " + Arrays.toString(Arrays.copyOfRange(tmpPktBuf, 0, 500)));
-        // TRACE COMPUTATION CALL with the read block contents and erased index
-        // returns a boolean array carrying the trace bits of all the bytes in the input byte array
-        boolean[] helperTraceBool = computeTraces(tmpPktBuf, lostNodeIndex, helperNodeIndex);
-//        ourlog.write(this, this.datanode.getDatanodeUuid(), "helperNodeIndex: " + helperNodeIndex + " - seqNo: " + seqno +
-//                " helperTraceBool: " + Arrays.toString(Arrays.copyOfRange(helperTraceBool, 0, 500)));
-        // convert the boolean trace array to a byte array
-        byte[] helperTraceByte = convertBooleanToByte(helperTraceBool);
-//        ourlog.write(this, this.datanode.getDatanodeUuid(), "helperNodeIndex: " + helperNodeIndex + " - seqNo: " + seqno +
-//                " helperTraceByte: " + Arrays.toString(Arrays.copyOfRange(helperTraceByte, 0, 500)));
-        double Mb = 1024.0 * 1024.0;
-
-
-        // The packet buffer is organized as follows:
-        // _______HHHHCCCCD?D?D?D?
-        //        ^   ^
-        //        |   \ checksumOff
-        //        \ headerOff
-        // _ padding, since the header is variable-length
-        // H = header and length prefixes
-        // C = checksums (We ignore the checksums fosendPacketr trace repair erasure coding)
-        // D? = data, if transferTo is false.
-        int packetLen = helperTraceByte.length + 33; // 33 is the header length, so 34 is the position
+        byte[] encoderInput = new byte[dataLen];
+        replicaInputStreams.readDataFully(encoderInput, 0, dataLen);
+        byte[] encoderOutput = repairTraceGeneration(helperNodeIndex, lostNodeIndex, encoderInput, dataLen);
+        int packetLen = encoderOutput.length + 33; // 33 is the header length, so 34 is the position
         packetBuffer = ByteBuffer.allocate(packetLen);
-
-        int headerLen = writePacketHeader(packetBuffer, helperTraceByte.length, packetLen);
+        int headerLen = writePacketHeader(packetBuffer, encoderOutput.length, packetLen);
         int headerOff = packetBuffer.position() - headerLen;
-//        ourlog.write(this, this.datanode.getDatanodeUuid(), "seqNo: " + seqno + " packet position: " + packetBuffer.position());
-
         // this method transfers bytes into this buffer from the given source array.
         // starting at the given offset in the array and at the current position of this buffer.
         // The position of this buffer is then incremented by length.
@@ -796,24 +667,16 @@ class BlockTraceSender implements java.io.Closeable {
         // src - The array from which bytes are to be read
         // offset - The offset within the array of the first byte to be read; must be non-negative and no larger than array.length
         // length - The number of bytes to be read from the given array; must be non-negative and no larger than array.length - offset
-        packetBuffer.put(helperTraceByte, 0, helperTraceByte.length);
-
+        packetBuffer.put(encoderOutput, 0, encoderOutput.length);
         // this method returns the byte array that backs this buffer
         byte[] buf = packetBuffer.array(); // the byte array buf copied with the contents of the pkt buffer
-
-//        ourlog.write(this, this.datanode.getDatanodeUuid(), "seqNo: " + seqno + " - offset: " + offset
-//                + " - packetLen: " + packetLen + " - before writing");
-//        ourlog.write(this, this.datanode.getDatanodeUuid(), "seqNo: " + seqno + " - data: " + Arrays.toString(helperTraceByte));
-
-        boolean lastDataPacket = offset + dataLen == endOffset && dataLen > 0;
-
         try {
             // this method writes len bytes from the specified byte array starting at offset off to this output stream.
             //args
             // b - the data.
             // off - the start offset in the data.
             // len - the number of bytes to write.
-            out.write(buf, headerOff, helperTraceByte.length + headerLen);
+            out.write(buf, headerOff, encoderOutput.length + headerLen);
         } catch (IOException e) {
             String exceptionMessage = "sendPacketMethod - Error: " + e.getMessage();
             ourlog.write(this, datanode.getDatanodeUuid(), exceptionMessage);
@@ -839,19 +702,16 @@ class BlockTraceSender implements java.io.Closeable {
                 if (!ioem.startsWith("Broken pipe") && !ioem.startsWith("Connection reset")) {
                     LOG.error("BlockTraceSender.sendChunks() exception: ", e);
                     datanode.getBlockScanner().markSuspectBlock(
-                            ris.getVolumeRef().getVolume().getStorageID(),
+                            replicaInputStreams.getVolumeRef().getVolume().getStorageID(),
                             block);
                 }
             }
             throw ioeToSocketException(e);
         }
-
         if (throttler != null) { // rebalancing so throttle
             throttler.throttle(packetLen);
         }
-
-        int [] dataLengths = {dataLen, helperTraceByte.length};
-        return dataLengths;
+        return new int[]{dataLen, encoderOutput.length};
     }
 
     /**
@@ -863,15 +723,15 @@ class BlockTraceSender implements java.io.Closeable {
      */
     private void readChecksum(byte[] buf, final int checksumOffset,
                               final int checksumLen) throws IOException {
-        if (checksumSize <= 0 && ris.getChecksumIn() == null) {
+        if (checksumSize <= 0 && replicaInputStreams.getChecksumIn() == null) {
             return;
         }
         try {
-            ris.readChecksumFully(buf, checksumOffset, checksumLen);
+            replicaInputStreams.readChecksumFully(buf, checksumOffset, checksumLen);
         } catch (IOException e) {
             LOG.warn(" Could not read or failed to verify checksum for data"
                     + " at offset " + offset + " for block " + block, e);
-            ris.closeChecksumStream();
+            replicaInputStreams.closeChecksumStream();
             if (corruptChecksumOk) {
                 if (checksumOffset < checksumLen) {
                     // Just fill the array with zeros.
@@ -956,59 +816,31 @@ class BlockTraceSender implements java.io.Closeable {
         initialOffset = offset;
         long totalSentCheck = 0;
         long totalRead = 0;
-        OutputStream streamForSendChunks = out;
 
         lastCacheDropOffset = initialOffset;
 
-        if (isLongRead() && ris.getDataInFd() != null) {
+        if (isLongRead() && replicaInputStreams.getDataInFd() != null) {
             // Advise that this file descriptor will be accessed sequentially.
-            ris.dropCacheBehindReads(block.getBlockName(), 0, 0,
+            replicaInputStreams.dropCacheBehindReads(block.getBlockName(), 0, 0,
                     POSIX_FADV_SEQUENTIAL);
         }
 
-        // Trigger readahead of beginning of file if configured.
+        // Trigger read-ahead of beginning of file if configured.
         manageOsCache();
 
         final long startTime = ClientTraceLog.isDebugEnabled() ? System.nanoTime() : 0;
         try {
             int maxChunksPerPacket;
             int pktBufSize = PacketHeader.PKT_MAX_HEADER_LEN;
-          /*  boolean transferTo = transferToAllowed && !verifyChecksum
-                    && baseStream instanceof SocketOutputStream
-                    && ris.getDataIn() instanceof FileInputStream; */
-           /* if (transferTo) {
-                FileChannel fileChannel =
-                        ((FileInputStream)ris.getDataIn()).getChannel();
-                blockInPosition = fileChannel.position();
-                streamForSendChunks = baseStream;
-                maxChunksPerPacket = numberOfChunks(TRANSFERTO_BUFFER_SIZE);
 
-                // Smaller packet size to only hold checksum when doing transferTo
-                pktBufSize += checksumSize * maxChunksPerPacket;
-            } else { */
             maxChunksPerPacket = Math.max(1,
                     numberOfChunks(IO_FILE_BUFFER_SIZE));
-            // Packet size includes both checksum and data
-            //}
-            int dataLen = (int) Math.min(endOffset - offset,
-                    (chunkSize * (long) maxChunksPerPacket));
 
-            //int numChunks = numberOfChunks(dataLen); // Number of chunks be sent in the packet
-//            int checksumDataLen = 0;
-//            int packetLen = dataLen + checksumDataLen + 4;
-//            int pktBufSize2 = packetLen;
             pktBufSize += (chunkSize + checksumSize) * maxChunksPerPacket;
-//            ourlog.write(this, this.datanode.getDatanodeUuid(), "pktBufSize: " + pktBufSize + " - pktBufSize2: " + pktBufSize2);
             ByteBuffer pktBuf = ByteBuffer.allocate(pktBufSize);
-//            byte[] testPktBuf = pktBuf.array();
-//            ourlog.write(this, this.datanode.getDatanodeUuid(), "doSendBlock 4: " + Arrays.toString(Arrays.copyOfRange(testPktBuf, 0, 30)));
-
-            int counter = 0;
             while (endOffset > offset && !Thread.currentThread().isInterrupted()) {
-//                ourlog.write(this, this.datanode.getDatanodeUuid(), "before sendPacketTraceReader seqNo: " + seqno + " - offset: " + offset + " - endOffset: " + endOffset);
-
                 manageOsCache();
-                int[] dataLengths = sendPacketTraceReader(pktBuf, maxChunksPerPacket, streamForSendChunks,
+                int[] dataLengths = sendPacketTraceReader(pktBuf, maxChunksPerPacket, out,
                         false, throttler);
                 int READ_INDEX = 0;
                 int SENT_INDEX = 1;
@@ -1017,19 +849,14 @@ class BlockTraceSender implements java.io.Closeable {
                 offset += len;
                 totalRead += len;
                 totalSentCheck += dataSent;
-//               ourlog.write(this, this.datanode.getDatanodeUuid(), "seqNo: " + seqno + " - dataRead: " + len + " - dataSent: " + dataSent + " offset: " + offset + " / " + endOffset);
-
                 seqno++;
             }
-//            ourlog.write(this, datanode.getDatanodeUuid(), "doSendBlock 5 - seqno: " + seqno);
-//            ourlog.write(this, this.datanode.getDatanodeUuid(), "seqNo: " + seqno + " - totalRead: " + totalRead + " - totalSentCheck: " + totalSentCheck);
-
             // If this thread was interrupted, then it did not send the full block.
             if (!Thread.currentThread().isInterrupted()) {
                 try {
                     ourlog.write(this, datanode.getDatanodeUuid(), "send an empty packet to mark end of the block");
                     // send an empty packet to mark the end of the block
-                    sendPacketTraceReader(pktBuf, maxChunksPerPacket, streamForSendChunks, false,
+                    sendPacketTraceReader(pktBuf, maxChunksPerPacket, out, false,
                             throttler);
                     out.flush();
                 } catch (IOException e) { //socket error
@@ -1054,9 +881,6 @@ class BlockTraceSender implements java.io.Closeable {
 
             }
         } finally {
-//            ourlog.write(this, datanode.getDatanodeUuid(),"doSendBlock - helperNodeIndex: " + helperNodeIndex
-//                    + " - totalSentCheck: " + totalSentCheck + " -  totalRead: " + totalRead + " / " + length);
-
             if ((clientTraceFmt != null) && ClientTraceLog.isDebugEnabled()) {
                 final long endTime = System.nanoTime();
                 ClientTraceLog.debug(String.format(clientTraceFmt, totalRead,
@@ -1074,10 +898,11 @@ class BlockTraceSender implements java.io.Closeable {
      * Manage the OS buffer cache by performing read-ahead
      * and drop-behind.
      */
+    @SuppressWarnings("DuplicatedCode")
     private void manageOsCache() throws IOException {
         // We can't manage the cache for this block if we don't have a file
         // descriptor to work with.
-        if (ris.getDataInFd() == null) {
+        if (replicaInputStreams.getDataInFd() == null) {
             return;
         }
 
@@ -1085,7 +910,7 @@ class BlockTraceSender implements java.io.Closeable {
         if ((readaheadLength > 0) && (datanode.readaheadPool != null) &&
                 (alwaysReadahead || isLongRead())) {
             curReadahead = datanode.readaheadPool.readaheadStream(
-                    clientTraceFmt, ris.getDataInFd(), offset, readaheadLength,
+                    clientTraceFmt, replicaInputStreams.getDataInFd(), offset, readaheadLength,
                     Long.MAX_VALUE, curReadahead);
         }
 
@@ -1096,7 +921,7 @@ class BlockTraceSender implements java.io.Closeable {
             long nextCacheDropOffset = lastCacheDropOffset + CACHE_DROP_INTERVAL_BYTES;
             if (offset >= nextCacheDropOffset) {
                 long dropLength = offset - lastCacheDropOffset;
-                ris.dropCacheBehindReads(block.getBlockName(), lastCacheDropOffset,
+                replicaInputStreams.dropCacheBehindReads(block.getBlockName(), lastCacheDropOffset,
                         dropLength, POSIX_FADV_DONTNEED);
                 lastCacheDropOffset = offset;
             }
@@ -1123,14 +948,12 @@ class BlockTraceSender implements java.io.Closeable {
      * Write packet header into {@code pkt},
      * return the length of the header written.
      */
+    @SuppressWarnings("DuplicatedCode")
     private int writePacketHeader(ByteBuffer pkt, int dataLen, int packetLen) {
         pkt.clear();
         // both syncBlock and syncPacket are false
         PacketHeader header = new PacketHeader(packetLen, offset, seqno,
                 (dataLen == 0), dataLen, false);
-        byte[] headerBuffer = header.getBytes();
-        // ourlog.write(this, datanode.getDatanodeUuid(), "writePacketHeader: " + header);
-        // ourlog.write(this, datanode.getDatanodeUuid(), "writePacketHeader - headerBuffer: " + Arrays.toString(headerBuffer));
         int size = header.getSerializedSize();
         pkt.position(PacketHeader.PKT_MAX_HEADER_LEN - size);
         header.putInBuffer(pkt);

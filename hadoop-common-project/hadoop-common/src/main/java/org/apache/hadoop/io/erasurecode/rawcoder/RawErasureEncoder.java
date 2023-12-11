@@ -21,7 +21,9 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.io.erasurecode.ECChunk;
 import org.apache.hadoop.io.erasurecode.ErasureCoderOptions;
 import org.apache.hadoop.util.OurECLogger;
+import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
@@ -127,6 +129,25 @@ public abstract class RawErasureEncoder {
     }
 
     doEncode(baeState);
+  }
+
+  public void encodeWithErasedIndex(
+    byte[][] inputs, byte[][] outputs,
+    int nodeIndex, int erasedIndex
+  ) {
+    ByteArrayEncodingState baeState = new ByteArrayEncodingState(
+        this, inputs, outputs);
+    int dataLen = baeState.encodeLength;
+    if (dataLen == 0) { return; }
+    doEncode(baeState, nodeIndex, erasedIndex);
+  }
+
+  protected void doEncode(
+    ByteArrayEncodingState encodingState,
+    @Nullable Integer requestedNodeIndex,
+    int erasedIndex
+  ) {
+    throw new NotImplementedException();
   }
 
   /**

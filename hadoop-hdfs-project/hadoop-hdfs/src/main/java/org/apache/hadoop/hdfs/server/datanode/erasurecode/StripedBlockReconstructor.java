@@ -216,43 +216,24 @@ class StripedBlockReconstructor extends StripedReconstructor
 
   private void reconstructTargets() throws IOException {
     int reconstructLen = receivedByteBuffers[0].capacity();
+    // [DEBUG] Read up to input length of data for each input array.
     byte[][] inputs = new byte[receivedByteBuffers.length][reconstructLen];
     int[] inputLength = new int[receivedByteBuffers.length];
     for (int i = 0; i < receivedByteBuffers.length; i++) {
       int erasedIndex = getStripedReader().getErasedIndex();
-
-      if (i == erasedIndex) {
-        continue;
-      }
-
+      if (i == erasedIndex) { continue; }
       receivedByteBuffers[i].get(inputs[i]);
       int helperNodeIndex = i;
-
       Object element = helperTable.getElement(helperNodeIndex, erasedIndex);
       String s = element.toString();
       String[] elements = s.split(",");
       int traceBandwidth = Integer.parseInt(elements[0]);
       int ONE_BYTE = 8; // 8 bits;
       inputLength[i] = reconstructLen * traceBandwidth / ONE_BYTE;
-
       ourECLogger.write(this, getDatanode().getDatanodeUuid(), "reconstructTargets: " +
               " - reconstructLen: " + inputLength[i] +
               Arrays.toString(Arrays.copyOfRange(inputs[i], 0, 1000)));
     }
-
-//    int[] erasedIndices = stripedWriter.getRealTargetIndices();
-//    ByteBuffer[] outputs = stripedWriter.getRealTargetBuffers(reconstructLen);
-//
-//
-//
-//    long start = System.nanoTime();
-//    RawErasureDecoder decoder = getDecoder();
-//    ourECLogger.write(this, getDatanode().getDatanodeUuid(), "reconstructTargets - decoder: " + decoder);
-//    getDecoder().decode(receivedByteBuffers, erasedIndices, outputs);
-//    long end = System.nanoTime();
-//    this.getDatanode().getMetrics().incrECDecodingTime(end - start);
-//
-//    stripedWriter.updateRealTargetBuffers(reconstructLen);
   }
 
 
@@ -269,7 +250,6 @@ class StripedBlockReconstructor extends StripedReconstructor
    */
   private void clearBuffers() {
     getStripedReader().clearBuffers();
-
     stripedWriter.clearBuffers();
   }
 }

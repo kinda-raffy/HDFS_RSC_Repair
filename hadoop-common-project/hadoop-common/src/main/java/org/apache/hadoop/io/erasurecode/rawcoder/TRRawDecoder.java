@@ -186,6 +186,7 @@ public class TRRawDecoder extends RawErasureDecoder {
     }
 
     protected byte[] repairDecimalTrace(int n, int erasedIdx) {
+        // [NOTE] This should happen on a chunk by chunk basis.
         byte[] revMem = new byte[n * 256];
         byte[] erasedDualBasis = dualBasisTable.getRow_9_6(erasedIdx);
         for (int i = 0; i < n; i++) {

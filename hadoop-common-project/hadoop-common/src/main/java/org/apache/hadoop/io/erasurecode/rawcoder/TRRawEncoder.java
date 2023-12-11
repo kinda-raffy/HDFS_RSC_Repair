@@ -25,6 +25,7 @@ import org.apache.hadoop.io.erasurecode.coder.util.tracerepair.HelperTable;
 import org.apache.hadoop.io.erasurecode.rawcoder.util.DumpUtil;
 import org.apache.hadoop.io.erasurecode.rawcoder.util.RSUtil;
 
+import javax.annotation.Nullable;
 import java.util.Arrays;
 
 /**
@@ -76,6 +77,15 @@ public class TRRawEncoder extends RawErasureEncoder {
 
     @Override
     protected void doEncode(ByteArrayEncodingState encodingState) {
+        doEncode(encodingState, null, 0);
+    }
+
+    @Override
+    protected void doEncode(
+        ByteArrayEncodingState encodingState,
+        @Nullable Integer requestedNodeIndex,
+        int erasedIndex
+    ) {
         CoderUtil.resetOutputBuffers(
             encodingState.outputs,
             encodingState.outputOffsets,
@@ -88,7 +98,7 @@ public class TRRawEncoder extends RawErasureEncoder {
         );
 
         int sourceCount = encodingState.inputs.length +
-                encodingState.outputs.length;
+            encodingState.outputs.length;
         byte[][] dataParityInputs
             = new byte[sourceCount][encodingState.encodeLength];
         combineDataParitySources(
@@ -98,7 +108,11 @@ public class TRRawEncoder extends RawErasureEncoder {
         );
 
         encodingState.outputs = new byte[sourceCount][];
-        int erasedIndex = 0;
+        if (requestedNodeIndex != null) {
+            repairTraceGeneration(requestedNodeIndex, erasedIndex,
+                dataParityInputs, encodingState.outputs, encodingState.encodeLength);
+            return;
+        }
         int totalNodeCount = getNumAllUnits();
         for (int nodeIndex = 0; nodeIndex < totalNodeCount; nodeIndex++) {
             if (nodeIndex == erasedIndex) { continue; }
