@@ -131,25 +131,6 @@ public abstract class RawErasureEncoder {
     doEncode(baeState);
   }
 
-  public void encodeWithErasedIndex(
-    byte[][] inputs, byte[][] outputs,
-    int nodeIndex, int erasedIndex
-  ) {
-    ByteArrayEncodingState baeState = new ByteArrayEncodingState(
-        this, inputs, outputs);
-    int dataLen = baeState.encodeLength;
-    if (dataLen == 0) { return; }
-    doEncode(baeState, nodeIndex, erasedIndex);
-  }
-
-  protected void doEncode(
-    ByteArrayEncodingState encodingState,
-    @Nullable Integer requestedNodeIndex,
-    int erasedIndex
-  ) {
-    throw new NotImplementedException();
-  }
-
   /**
    * Perform the real encoding work using bytes array, supporting offsets
    * and lengths.

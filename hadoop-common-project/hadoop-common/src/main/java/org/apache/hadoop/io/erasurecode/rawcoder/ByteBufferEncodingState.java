@@ -34,12 +34,18 @@ class ByteBufferEncodingState extends EncodingState {
 
   ByteBufferEncodingState(RawErasureEncoder encoder,
                           ByteBuffer[] inputs, ByteBuffer[] outputs) {
+    this(encoder, inputs, outputs, false);
+  }
+  ByteBufferEncodingState(RawErasureEncoder encoder,
+                          ByteBuffer[] inputs, ByteBuffer[] outputs,
+                          boolean isTraceRepair) {
     this.encoder = encoder;
     ByteBuffer validInput = CoderUtil.findFirstValidInput(inputs);
     this.encodeLength = validInput.remaining();
     this.usingDirectBuffer = validInput.isDirect();
     this.inputs = inputs;
     this.outputs = outputs;
+    this.isTraceRepair = isTraceRepair;
 
     checkParameters(inputs, outputs);
     checkBuffers(inputs);

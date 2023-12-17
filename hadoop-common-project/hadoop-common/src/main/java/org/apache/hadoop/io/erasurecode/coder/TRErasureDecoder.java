@@ -42,15 +42,27 @@ public class TRErasureDecoder extends ErasureDecoder {
 
     @Override
     protected ErasureCodingStep prepareDecodingStep(final ECBlockGroup blockGroup) {
-        ECBlock[] inputBlocks = getInputBlocks(blockGroup);
+        ECBlock[] inputBlocks = getTraceInputBlocks(blockGroup);
         ECBlock[] outputBlocks = getOutputBlocks(blockGroup);
         RawErasureDecoder rawDecoder = checkCreateTRRawDecoder();
         return new ErasureDecodingStep(
             inputBlocks,
-            getErasedIndexes(inputBlocks),
+            getErasedIndexes(getInputBlocks(blockGroup)),
             outputBlocks,
             rawDecoder
         );
+    }
+    protected ECBlock[] getTraceInputBlocks(ECBlockGroup blockGroup) {
+        // [WARN] We assume that only a single node can fail for now.
+        int erasedNodeCount = 1;
+        ECBlock[] inputBlocks
+                = new ECBlock[getNumDataUnits() + getNumParityUnits() - erasedNodeCount];
+        System.arraycopy(
+                blockGroup.getParityBlocks(),
+                0, inputBlocks, 0,
+                getNumDataUnits() + getNumParityUnits() - erasedNodeCount
+        );
+        return inputBlocks;
     }
 
     private RawErasureDecoder checkCreateTRRawDecoder() {

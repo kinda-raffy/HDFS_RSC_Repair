@@ -52,7 +52,6 @@ import org.apache.hadoop.net.SocketOutputStream;
 import org.apache.hadoop.util.AutoCloseableLock;
 import org.apache.hadoop.util.DataChecksum;
 import org.apache.hadoop.tracing.TraceScope;
-import org.apache.hadoop.hdfs.server.datanode.erasurecode.HelperTable96;
 
 
 import static org.apache.hadoop.io.nativeio.NativeIO.POSIX.POSIX_FADV_DONTNEED;
@@ -63,6 +62,18 @@ import org.apache.hadoop.util.Preconditions;
 import org.slf4j.Logger;
 import org.apache.hadoop.util.OurECLogger;
 import org.apache.hadoop.util.OurTestLogger;
+
+/** [NOTE]
+ * 1. File put to Hadoop
+ * 2. Hadoop put it into 9 machines
+ * 3. 1 machine down
+ * 4. Each remaining machine read the data in its machine
+ * 5. Each remaining machine encode the data it reads and sends it over as a packet
+ * 6. The receiver receives the encoded data as the packet
+ * 7. The receiver puts the decoded data into 8 byte arrays. DONE
+ * 8. The receiver decodes the whole file together
+ * 9. The receiver combines all the files
+ */
 
 /**
  * Reads a block from the disk and sends it to a recipient.
@@ -447,339 +458,6 @@ class BlockTraceSender implements java.io.Closeable {
         preCompute();
     }
 
-    private void preCompute() {
-        int i;
-        preComputedParity[0] = 0;
-        for (i = 1; i < 256; i++) {
-            preComputedParity[i] = (byte) (preComputedParity[i >> 1] ^ (i & 1));
-        }
-    }
-
-    private ChunkChecksum getPartialChunkChecksumForFinalized(
-            FinalizedReplica finalized) throws IOException {
-        // There are a number of places in the code base where a finalized replica
-        // object is created. If last partial checksum is loaded whenever a
-        // finalized replica is created, it would increase latency in DataNode
-        // initialization. Therefore, the last partial chunk checksum is loaded
-        // lazily.
-
-        // Load last checksum in case the replica is being written concurrently
-        final long replicaVisibleLength = replica.getVisibleLength();
-        if (replicaVisibleLength % CHUNK_SIZE != 0 &&
-                finalized.getLastPartialChunkChecksum() == null) {
-            // the finalized replica does not have precomputed last partial
-            // chunk checksum. Recompute now.
-            try {
-                finalized.loadLastPartialChunkChecksum();
-                return new ChunkChecksum(finalized.getVisibleLength(),
-                        finalized.getLastPartialChunkChecksum());
-            } catch (FileNotFoundException e) {
-                // meta file is lost. Continue anyway to preserve existing behavior.
-                DataNode.LOG.warn(
-                        "meta file " + finalized.getMetaFile() + " is missing!");
-                return null;
-            }
-        } else {
-            // If the checksum is null, BlockSender will use on-disk checksum.
-            return new ChunkChecksum(finalized.getVisibleLength(),
-                    finalized.getLastPartialChunkChecksum());
-        }
-    }
-
-    /**
-     * close opened files.
-     */
-    @SuppressWarnings("DuplicatedCode")
-    @Override
-    public void close() throws IOException {
-        if (replicaInputStreams.getDataInFd() != null &&
-                ((dropCacheBehindAllReads) ||
-                        (dropCacheBehindLargeReads && isLongRead()))) {
-            try {
-                replicaInputStreams.dropCacheBehindReads(block.getBlockName(), lastCacheDropOffset,
-                        offset - lastCacheDropOffset, POSIX_FADV_DONTNEED);
-            } catch (Exception e) {
-                LOG.warn("Unable to drop cache on file close", e);
-            }
-        }
-        if (curReadahead != null) {
-            curReadahead.cancel();
-        }
-
-        try {
-            replicaInputStreams.closeStreams();
-        } finally {
-            IOUtils.closeStream(replicaInputStreams);
-            replicaInputStreams = null;
-        }
-    }
-
-    private static Replica getReplica(ExtendedBlock block, DataNode datanode)
-            throws ReplicaNotFoundException {
-        Replica replica = datanode.data.getReplica(
-                block.getBlockPoolId(), block.getBlockId());
-        if (replica == null) {
-            throw new ReplicaNotFoundException(block);
-        }
-        return replica;
-    }
-
-    /**
-     * Wait for rbw replica to reach the length
-     * @param rbw replica that is being written to
-     * @param len minimum length to reach
-     * @throws IOException on failing to reach the len in given wait time
-     */
-    private static void waitForMinLength(ReplicaInPipeline rbw, long len)
-            throws IOException {
-        // Wait for 3 seconds for rbw replica to reach the minimum length
-        for (int i = 0; i < 30 && rbw.getBytesOnDisk() < len; i++) {
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException ie) {
-                throw new IOException(ie);
-            }
-        }
-        long bytesOnDisk = rbw.getBytesOnDisk();
-        if (bytesOnDisk < len) {
-            throw new IOException(
-                    String.format("Need %d bytes, but only %d bytes available", len,
-                            bytesOnDisk));
-        }
-    }
-
-    /**
-     * Converts an IOExcpetion (not subclasses) to SocketException.
-     * This is typically done to indicate to upper layers that the error
-     * was a socket error rather than often more serious exceptions like
-     * disk errors.
-     */
-    private static IOException ioeToSocketException(IOException ioe) {
-        if (ioe.getClass().equals(IOException.class)) {
-            // "se" could be a new class in stead of SocketException.
-            IOException se = new SocketException("Original Exception : " + ioe);
-            se.initCause(ioe);
-            /* Change the stacktrace so that original trace is not truncated
-             * when printed.*/
-            se.setStackTrace(ioe.getStackTrace());
-            return se;
-        }
-        // otherwise just return the same exception.
-        return ioe;
-    }
-
-    /** [NOTE]
-     * 1. File put to Hadoop
-     * 2. Hadoop put it into 9 machines
-     * 3. 1 machine down
-     * 4. Each remaining machine read the data in its machine
-     * 5. Each remaining machine encode the data it reads and sends it over as a packet
-     * 6. The receiver receives the encoded data as the packet
-     * 7. The receiver puts the decoded data into 8 byte arrays. DONE
-     * 8. The receiver decodes the whole file together
-     * 9. The receiver combines all the files
-     */
-
-    /**
-     * @param datalen Length of data
-     * @return number of chunks for data of given size
-     */
-    private int numberOfChunks(long datalen) {
-        return (int) ((datalen + chunkSize - 1)/chunkSize);
-    }
-
-
-    /**
-     * Convert a boolean array into a byte array
-     *  @param bools a boolean array of boolean values
-     *  @return a byte[] containing the boolean values (zero padded if boolean array is not a multiple of 8)
-     *  adapted from https://sakai.rutgers.edu/wiki/site/e07619c5-a492-4ebe-8771-179dfe450ae4/bit-to-boolean%20conversion.html
-     */
-    public static byte[] convertBooleanToByte(boolean[] bools) {
-        int length = bools.length / 8;
-        int mod = bools.length % 8;
-        if(mod != 0){
-            ++length;
-        }
-        byte[] retVal = new byte[length];
-        int boolIndex = 0;
-        for (int byteIndex = 0; byteIndex < retVal.length; ++byteIndex) {
-            for (int bitIndex = 7; bitIndex >= 0; --bitIndex) {
-                if (boolIndex >= bools.length) {
-                    return retVal;
-                }++length;
-                if (bools[boolIndex++]) {
-                    retVal[byteIndex] |= (byte) (1 << bitIndex);
-                }
-            }
-        }
-
-        return retVal;
-    }
-
-    @SuppressWarnings("DuplicatedCode")
-    protected byte[] repairTraceGeneration(
-        int nodeIndex, int erasedNodeIndex,
-        byte[] inputs, int encodeLength
-    ) {
-        assert(nodeIndex != erasedNodeIndex);
-        byte bw = helperTable.getByte_9_6(nodeIndex, erasedNodeIndex, 0);
-        byte[] repairTrace = new byte[bw * encodeLength];
-        byte[] H = helperTable.getRow_9_6(nodeIndex, erasedNodeIndex);
-        byte[] Hij = new byte[H.length - 1];
-        System.arraycopy(H, 1, Hij, 0, Hij.length);
-        int idx = 0;
-        for (int a = 0; a < bw; a++) {
-            for (int testCodeWord = 0; testCodeWord < encodeLength; testCodeWord++) {
-                byte parityCalculation = (byte) (Hij[a] & (inputs[testCodeWord]));
-                int parityIndex = parityCalculation & 0xFF;
-                repairTrace[idx++] = preComputedParity[parityIndex];
-            }
-        }
-        return repairTrace;
-    }
-
-    /**
-     * Sends a packet with up to maxChunks chunks of data.
-     *
-     * @param packetBuffer buffer used for writing packet data
-     * @param maxChunks maximum number of chunks to send
-     * @param out stream to send data to
-     * @param transferTo use transferTo to send data
-     * @param throttler used for throttling data transfer bandwidth
-     */
-    private int[] sendPacketTraceReader(ByteBuffer packetBuffer, int maxChunks, OutputStream out,
-                                        boolean transferTo, DataTransferThrottler throttler) throws IOException {
-        long normalDataReadingLen = chunkSize * (long) maxChunks;
-        int dataLen = (int) Math.min(endOffset - offset,
-                normalDataReadingLen);
-        byte[] encoderInput = new byte[dataLen];
-        replicaInputStreams.readDataFully(encoderInput, 0, dataLen);
-        byte[] encoderOutput = repairTraceGeneration(helperNodeIndex, lostNodeIndex, encoderInput, dataLen);
-        int packetLen = encoderOutput.length + 33; // 33 is the header length, so 34 is the position
-        packetBuffer = ByteBuffer.allocate(packetLen);
-        int headerLen = writePacketHeader(packetBuffer, encoderOutput.length, packetLen);
-        int headerOff = packetBuffer.position() - headerLen;
-        // this method transfers bytes into this buffer from the given source array.
-        // starting at the given offset in the array and at the current position of this buffer.
-        // The position of this buffer is then incremented by length.
-        // args
-        // src - The array from which bytes are to be read
-        // offset - The offset within the array of the first byte to be read; must be non-negative and no larger than array.length
-        // length - The number of bytes to be read from the given array; must be non-negative and no larger than array.length - offset
-        packetBuffer.put(encoderOutput, 0, encoderOutput.length);
-        // this method returns the byte array that backs this buffer
-        byte[] buf = packetBuffer.array(); // the byte array buf copied with the contents of the pkt buffer
-        try {
-            // this method writes len bytes from the specified byte array starting at offset off to this output stream.
-            //args
-            // b - the data.
-            // off - the start offset in the data.
-            // len - the number of bytes to write.
-            out.write(buf, headerOff, encoderOutput.length + headerLen);
-        } catch (IOException e) {
-            String exceptionMessage = "sendPacketMethod - Error: " + e.getMessage();
-            ourlog.write(this, datanode.getDatanodeUuid(), exceptionMessage);
-            if (e instanceof SocketTimeoutException) {
-                /*
-                 * writing to client timed out.  This happens if the client reads
-                 * part of a block and then decides not to read the rest (but leaves
-                 * the socket open).
-                 *
-                 * Reporting of this case is done in DataXceiver#run
-                 */
-            } else {
-                /* Exception while writing to the client. Connection closure from
-                 * the other end is mostly the case and we do not care much about
-                 * it. But other things can go wrong, especially in transferTo(),
-                 * which we do not want to ignore.
-                 *
-                 * The message parsing below should not be considered as a good
-                 * coding example. NEVER do it to drive a program logic. NEVER.
-                 * It was done here because the NIO throws an IOException for EPIPE.
-                 */
-                String ioem = e.getMessage();
-                if (!ioem.startsWith("Broken pipe") && !ioem.startsWith("Connection reset")) {
-                    LOG.error("BlockTraceSender.sendChunks() exception: ", e);
-                    datanode.getBlockScanner().markSuspectBlock(
-                            replicaInputStreams.getVolumeRef().getVolume().getStorageID(),
-                            block);
-                }
-            }
-            throw ioeToSocketException(e);
-        }
-        if (throttler != null) { // rebalancing so throttle
-            throttler.throttle(packetLen);
-        }
-        return new int[]{dataLen, encoderOutput.length};
-    }
-
-    /**
-     * Read checksum into given buffer
-     * @param buf buffer to read the checksum into
-     * @param checksumOffset offset at which to write the checksum into buf
-     * @param checksumLen length of checksum to write
-     * @throws IOException on error
-     */
-    private void readChecksum(byte[] buf, final int checksumOffset,
-                              final int checksumLen) throws IOException {
-        if (checksumSize <= 0 && replicaInputStreams.getChecksumIn() == null) {
-            return;
-        }
-        try {
-            replicaInputStreams.readChecksumFully(buf, checksumOffset, checksumLen);
-        } catch (IOException e) {
-            LOG.warn(" Could not read or failed to verify checksum for data"
-                    + " at offset " + offset + " for block " + block, e);
-            replicaInputStreams.closeChecksumStream();
-            if (corruptChecksumOk) {
-                if (checksumOffset < checksumLen) {
-                    // Just fill the array with zeros.
-                    Arrays.fill(buf, checksumOffset, checksumLen, (byte) 0);
-                }
-            } else {
-                throw e;
-            }
-        }
-    }
-
-    /**
-     * Compute checksum for chunks and verify the checksum that is read from
-     * the metadata file is correct.
-     *
-     * @param buf buffer that has checksum and data
-     * @param dataOffset position where data is written in the buf
-     * @param datalen length of data
-     * @param numChunks number of chunks corresponding to data
-     * @param checksumOffset offset where checksum is written in the buf
-     * @throws ChecksumException on failed checksum verification
-     */
-    public void verifyChecksum(final byte[] buf, final int dataOffset,
-                               final int datalen, final int numChunks, final int checksumOffset)
-            throws ChecksumException {
-        int dOff = dataOffset;
-        int cOff = checksumOffset;
-        int dLeft = datalen;
-
-        for (int i = 0; i < numChunks; i++) {
-            checksum.reset();
-            int dLen = Math.min(dLeft, chunkSize);
-            checksum.update(buf, dOff, dLen);
-            if (!checksum.compare(buf, cOff)) {
-                long failedPos = offset + datalen - dLeft;
-                StringBuilder replicaInfoString = new StringBuilder();
-                if (replica != null) {
-                    replicaInfoString.append(" for replica: " + replica.toString());
-                }
-                throw new ChecksumException("Checksum failed at " + failedPos
-                        + replicaInfoString, failedPos);
-            }
-            dLeft -= dLen;
-            dOff += dLen;
-            cOff += checksumSize;
-        }
-    }
-
     /**
      * sendBlock() is used to read block and its metadata and stream the data to
      * either a client or to another datanode.
@@ -895,6 +573,155 @@ class BlockTraceSender implements java.io.Closeable {
     }
 
     /**
+     * Sends a packet with up to maxChunks chunks of data.
+     *
+     * @param packetBuffer buffer used for writing packet data
+     * @param maxChunks maximum number of chunks to send
+     * @param out stream to send data to
+     * @param transferTo use transferTo to send data
+     * @param throttler used for throttling data transfer bandwidth
+     */
+    private int[] sendPacketTraceReader(ByteBuffer packetBuffer, int maxChunks, OutputStream out,
+                                        boolean transferTo, DataTransferThrottler throttler) throws IOException {
+        long normalDataReadingLen = chunkSize * (long) maxChunks;
+        int dataLen = (int) Math.min(endOffset - offset, normalDataReadingLen);
+        // dataLen = 16
+        // encoderOutput <= 16 depends on bw
+
+        byte[] encoderInput = new byte[dataLen];
+        replicaInputStreams.readDataFully(encoderInput, 0, dataLen);
+        byte[] nodeTrace = repairTraceGeneration(helperNodeIndex, lostNodeIndex, encoderInput, dataLen);
+        byte[] encoderOutput = new byte[(int) Math.ceil((double) nodeTrace.length / 8)];
+        compressTrace(nodeTrace, encoderOutput);
+
+        int packetLength = encoderOutput.length + 33; // 33 is the header length, so 34 is the position
+        packetBuffer = ByteBuffer.allocate(packetLength);
+        int headerLength = writePacketHeader(packetBuffer, encoderOutput.length, packetLength);
+        int headerOffset = packetBuffer.position() - headerLength;
+        // this method transfers bytes into this buffer from the given source array.
+        // starting at the given offset in the array and at the current position of this buffer.
+        // The position of this buffer is then incremented by length.
+        // args
+        // src - The array from which bytes are to be read
+        // offset - The offset within the array of the first byte to be read; must be non-negative and no larger than array.length
+        // length - The number of bytes to be read from the given array; must be non-negative and no larger than array.length - offset
+        packetBuffer.put(encoderOutput, 0, encoderOutput.length);
+        // this method returns the byte array that backs this buffer
+        byte[] buf = packetBuffer.array(); // the byte array buf copied with the contents of the pkt buffer
+        try {
+            // this method writes len bytes from the specified byte array starting at offset off to this output stream.
+            //args
+            // b - the data.
+            // off - the start offset in the data.
+            // len - the number of bytes to write.
+            out.write(buf, headerOffset, encoderOutput.length + headerLength);
+        } catch (IOException e) {
+            String exceptionMessage = "sendPacketMethod - Error: " + e.getMessage();
+            ourlog.write(this, datanode.getDatanodeUuid(), exceptionMessage);
+            //noinspection StatementWithEmptyBody
+            if (e instanceof SocketTimeoutException) {
+                /*
+                 * writing to client timed out.  This happens if the client reads
+                 * part of a block and then decides not to read the rest (but leaves
+                 * the socket open).
+                 *
+                 * Reporting of this case is done in DataXceiver#run
+                 */
+            } else {
+                /* Exception while writing to the client. Connection closure from
+                 * the other end is mostly the case and we do not care much about
+                 * it. But other things can go wrong, especially in transferTo(),
+                 * which we do not want to ignore.
+                 *
+                 * The message parsing below should not be considered as a good
+                 * coding example. NEVER do it to drive a program logic. NEVER.
+                 * It was done here because the NIO throws an IOException for EPIPE.
+                 */
+                String ioem = e.getMessage();
+                if (!ioem.startsWith("Broken pipe") && !ioem.startsWith("Connection reset")) {
+                    LOG.error("BlockTraceSender.sendChunks() exception: ", e);
+                    datanode.getBlockScanner().markSuspectBlock(
+                            replicaInputStreams.getVolumeRef().getVolume().getStorageID(),
+                            block);
+                }
+            }
+            throw ioeToSocketException(e);
+        }
+        if (throttler != null) {
+            // Rebalancing required therefore throttle.
+            throttler.throttle(packetLength);
+        }
+        return new int[]{dataLen, encoderOutput.length};
+    }
+
+    @SuppressWarnings("DuplicatedCode")
+    protected byte[] repairTraceGeneration(
+            int nodeIndex, int erasedNodeIndex,
+            byte[] inputs, int encodeLength
+    ) {
+        assert(nodeIndex != erasedNodeIndex);
+        byte bw = helperTable.getByte_9_6(nodeIndex, erasedNodeIndex, 0);
+        byte[] repairTrace = new byte[bw * encodeLength];
+        byte[] H = helperTable.getRow_9_6(nodeIndex, erasedNodeIndex);
+        byte[] Hij = new byte[H.length - 1];
+        System.arraycopy(H, 1, Hij, 0, Hij.length);
+        int idx = 0;
+        for (int a = 0; a < bw; a++) {
+            for (int testCodeWord = 0; testCodeWord < encodeLength; testCodeWord++) {
+                byte parityCalculation = (byte) (Hij[a] & (inputs[testCodeWord]));
+                int parityIndex = parityCalculation & 0xFF;
+                repairTrace[idx++] = preComputedParity[parityIndex];
+            }
+        }
+        return repairTrace;
+    }
+
+    public static void compressTrace(byte[] trace, byte[] output) {
+        // [FIXME] Deal with output offsets.
+        int bitToEncodeIndex = 0;
+        for (byte bit : trace) {
+            assert(bit == 0 || bit == 1);
+            int outputElementIndex = bitToEncodeIndex / 8;
+            int bitPositionInElement = bitToEncodeIndex % 8;
+            if (bit == 1) {
+                output[outputElementIndex] |= (byte) (1 << (7 - bitPositionInElement));
+            } else {
+                output[outputElementIndex] &= (byte) ~(1 << (7 - bitPositionInElement));
+            }
+            bitToEncodeIndex++;
+        }
+    }
+
+    /**
+     * close opened files.
+     */
+    @SuppressWarnings("DuplicatedCode")
+    @Override
+    public void close() throws IOException {
+        // [DEBUG] The replicaStreams object is null.
+        /*if (replicaInputStreams.getDataInFd() != null &&
+                ((dropCacheBehindAllReads) ||
+                        (dropCacheBehindLargeReads && isLongRead()))) {
+            try {
+                replicaInputStreams.dropCacheBehindReads(block.getBlockName(), lastCacheDropOffset,
+                        offset - lastCacheDropOffset, POSIX_FADV_DONTNEED);
+            } catch (Exception e) {
+                LOG.warn("Unable to drop cache on file close", e);
+            }
+        }*/
+        if (curReadahead != null) {
+            curReadahead.cancel();
+        }
+
+        /*try {
+            replicaInputStreams.closeStreams();
+        } finally {*/
+            IOUtils.closeStream(replicaInputStreams);
+            replicaInputStreams = null;
+        // }
+    }
+
+    /**
      * Manage the OS buffer cache by performing read-ahead
      * and drop-behind.
      */
@@ -924,6 +751,145 @@ class BlockTraceSender implements java.io.Closeable {
                 replicaInputStreams.dropCacheBehindReads(block.getBlockName(), lastCacheDropOffset,
                         dropLength, POSIX_FADV_DONTNEED);
                 lastCacheDropOffset = offset;
+            }
+        }
+    }
+
+    /**
+     * Wait for rbw replica to reach the length
+     * @param rbw replica that is being written to
+     * @param len minimum length to reach
+     * @throws IOException on failing to reach the len in given wait time
+     */
+    private static void waitForMinLength(ReplicaInPipeline rbw, long len)
+            throws IOException {
+        // Wait for 3 seconds for rbw replica to reach the minimum length
+        for (int i = 0; i < 30 && rbw.getBytesOnDisk() < len; i++) {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException ie) {
+                throw new IOException(ie);
+            }
+        }
+        long bytesOnDisk = rbw.getBytesOnDisk();
+        if (bytesOnDisk < len) {
+            throw new IOException(
+                    String.format("Need %d bytes, but only %d bytes available", len,
+                            bytesOnDisk));
+        }
+    }
+
+    private ChunkChecksum getPartialChunkChecksumForFinalized(
+            FinalizedReplica finalized) throws IOException {
+        // There are a number of places in the code base where a finalized replica
+        // object is created. If last partial checksum is loaded whenever a
+        // finalized replica is created, it would increase latency in DataNode
+        // initialization. Therefore, the last partial chunk checksum is loaded
+        // lazily.
+
+        // Load last checksum in case the replica is being written concurrently
+        final long replicaVisibleLength = replica.getVisibleLength();
+        if (replicaVisibleLength % CHUNK_SIZE != 0 &&
+                finalized.getLastPartialChunkChecksum() == null) {
+            // the finalized replica does not have precomputed last partial
+            // chunk checksum. Recompute now.
+            try {
+                finalized.loadLastPartialChunkChecksum();
+                return new ChunkChecksum(finalized.getVisibleLength(),
+                        finalized.getLastPartialChunkChecksum());
+            } catch (FileNotFoundException e) {
+                // meta file is lost. Continue anyway to preserve existing behavior.
+                DataNode.LOG.warn(
+                        "meta file " + finalized.getMetaFile() + " is missing!");
+                return null;
+            }
+        } else {
+            // If the checksum is null, BlockSender will use on-disk checksum.
+            return new ChunkChecksum(finalized.getVisibleLength(),
+                    finalized.getLastPartialChunkChecksum());
+        }
+    }
+
+    private static Replica getReplica(ExtendedBlock block, DataNode datanode)
+            throws ReplicaNotFoundException {
+        Replica replica = datanode.data.getReplica(
+                block.getBlockPoolId(), block.getBlockId());
+        if (replica == null) {
+            throw new ReplicaNotFoundException(block);
+        }
+        return replica;
+    }
+
+    /**
+     * @param datalen Length of data
+     * @return number of chunks for data of given size
+     */
+    private int numberOfChunks(long datalen) {
+        return (int) ((datalen + chunkSize - 1)/chunkSize);
+    }
+
+    /**
+     * Compute checksum for chunks and verify the checksum that is read from
+     * the metadata file is correct.
+     *
+     * @param buf buffer that has checksum and data
+     * @param dataOffset position where data is written in the buf
+     * @param datalen length of data
+     * @param numChunks number of chunks corresponding to data
+     * @param checksumOffset offset where checksum is written in the buf
+     * @throws ChecksumException on failed checksum verification
+     */
+    public void verifyChecksum(final byte[] buf, final int dataOffset,
+                               final int datalen, final int numChunks, final int checksumOffset)
+            throws ChecksumException {
+        int dOff = dataOffset;
+        int cOff = checksumOffset;
+        int dLeft = datalen;
+
+        for (int i = 0; i < numChunks; i++) {
+            checksum.reset();
+            int dLen = Math.min(dLeft, chunkSize);
+            checksum.update(buf, dOff, dLen);
+            if (!checksum.compare(buf, cOff)) {
+                long failedPos = offset + datalen - dLeft;
+                StringBuilder replicaInfoString = new StringBuilder();
+                if (replica != null) {
+                    replicaInfoString.append(" for replica: " + replica.toString());
+                }
+                throw new ChecksumException("Checksum failed at " + failedPos
+                        + replicaInfoString, failedPos);
+            }
+            dLeft -= dLen;
+            dOff += dLen;
+            cOff += checksumSize;
+        }
+    }
+
+    /**
+     * Read checksum into given buffer
+     * @param buf buffer to read the checksum into
+     * @param checksumOffset offset at which to write the checksum into buf
+     * @param checksumLen length of checksum to write
+     * @throws IOException on error
+     */
+    private void readChecksum(byte[] buf, final int checksumOffset,
+                              final int checksumLen) throws IOException {
+        if (checksumSize <= 0 && replicaInputStreams.getChecksumIn() == null) {
+            return;
+        }
+        try {
+            replicaInputStreams.readChecksumFully(buf, checksumOffset, checksumLen);
+        } catch (IOException e) {
+            LOG.warn(" Could not read or failed to verify checksum for data"
+                    + " at offset " + offset + " for block " + block, e);
+            replicaInputStreams.closeChecksumStream();
+            if (corruptChecksumOk) {
+                if (checksumOffset < checksumLen) {
+                    // Just fill the array with zeros.
+                    Arrays.fill(buf, checksumOffset, checksumLen, (byte) 0);
+                }
+            } else {
+                throw e;
             }
         }
     }
@@ -960,6 +926,14 @@ class BlockTraceSender implements java.io.Closeable {
         return size;
     }
 
+    private void preCompute() {
+        int i;
+        preComputedParity[0] = 0;
+        for (i = 1; i < 256; i++) {
+            preComputedParity[i] = (byte) (preComputedParity[i >> 1] ^ (i & 1));
+        }
+    }
+
     boolean didSendEntireByteRange() {
         return sentEntireByteRange;
     }
@@ -977,5 +951,25 @@ class BlockTraceSender implements java.io.Closeable {
      */
     long getOffset() {
         return offset;
+    }
+
+    /**
+     * Converts an IOExcpetion (not subclasses) to SocketException.
+     * This is typically done to indicate to upper layers that the error
+     * was a socket error rather than often more serious exceptions like
+     * disk errors.
+     */
+    private static IOException ioeToSocketException(IOException ioe) {
+        if (ioe.getClass().equals(IOException.class)) {
+            // "se" could be a new class in stead of SocketException.
+            IOException se = new SocketException("Original Exception : " + ioe);
+            se.initCause(ioe);
+            /* Change the stacktrace so that original trace is not truncated
+             * when printed.*/
+            se.setStackTrace(ioe.getStackTrace());
+            return se;
+        }
+        // otherwise just return the same exception.
+        return ioe;
     }
 }

@@ -74,6 +74,17 @@ public abstract class TestErasureCoderBase extends TestCoderBase {
     performTestCoding(baseChunkSize + 16, true);
   }
 
+  protected void testTraceRepairCoding(boolean usingDirectBuffer) {
+    this.usingDirectBuffer = usingDirectBuffer;
+    prepareCoders();
+
+    /**
+     * The following runs will use 3 different chunkSize for inputs and outputs,
+     * to verify the same encoder/decoder can process variable width of data.
+     */
+    performTestTraceRepairCoding(baseChunkSize, true);
+  }
+
   private void performTestCoding(int chunkSize, boolean usingSlicedBuffer) {
     setChunkSize(chunkSize);
     prepareBufferAllocator(usingSlicedBuffer);
@@ -84,6 +95,40 @@ public abstract class TestErasureCoderBase extends TestCoderBase {
     // may affect the source data.
     TestBlock[] clonedDataBlocks =
         cloneBlocksWithData((TestBlock[]) blockGroup.getDataBlocks());
+    TestBlock[] parityBlocks = (TestBlock[]) blockGroup.getParityBlocks();
+
+    ErasureCodingStep codingStep;
+    codingStep = encoder.calculateCoding(blockGroup);
+    try {
+      // [DEBUG] Populates the parity blocks.
+      performCodingStep(codingStep);
+    } catch (IOException e) {
+      fail("IOException received during encoding: " + e.getMessage());
+    }
+    // Erase specified sources but return copies of them for later comparing
+    TestBlock[] backupBlocks = backupAndEraseBlocks(clonedDataBlocks, parityBlocks);
+    // Perform decoding.
+    blockGroup = new ECBlockGroup(clonedDataBlocks, blockGroup.getParityBlocks());
+    codingStep = decoder.calculateCoding(blockGroup);
+    try {
+      performCodingStep(codingStep);
+    } catch (IOException e) {
+      fail("IOException received during decoding: " + e.getMessage());
+    }
+    // Compare decoding with original data.
+    compareAndVerify(backupBlocks, codingStep.getOutputBlocks());
+  }
+
+  private void performTestTraceRepairCoding(int chunkSize, boolean usingSlicedBuffer) {
+    setChunkSize(chunkSize);
+    prepareBufferAllocator(usingSlicedBuffer);
+
+    // Generate data and encode
+    ECBlockGroup blockGroup = prepareTraceRepairBlockGroupForEncoding();
+    // Backup all the source chunks for later recovering because some coders
+    // may affect the source data.
+    TestBlock[] clonedDataBlocks =
+            cloneBlocksWithData((TestBlock[]) blockGroup.getDataBlocks());
     TestBlock[] parityBlocks = (TestBlock[]) blockGroup.getParityBlocks();
 
     ErasureCodingStep codingStep;
@@ -209,7 +254,7 @@ public abstract class TestErasureCoderBase extends TestCoderBase {
    * Prepare a block group for encoding.
    * @return
    */
-  protected ECBlockGroup prepareBlockGroupForEncoding( ) {
+  protected ECBlockGroup prepareBlockGroupForEncoding() {
     ECBlock[] dataBlocks = new TestBlock[numDataUnits];
     ECBlock[] parityBlocks = new TestBlock[numParityUnits];
 
@@ -222,6 +267,25 @@ public abstract class TestErasureCoderBase extends TestCoderBase {
     }
 
     return new ECBlockGroup(dataBlocks, parityBlocks);
+  }
+
+  protected ECBlockGroup prepareTraceRepairBlockGroupForEncoding() {
+    ECBlock[] dataBlocks = new TestBlock[numDataUnits];
+    // [WARN] We assume a single node can fail for now.
+    //        The output should only contain the byte-represented
+    //        binary traces of all the helper nodes.
+    int totalUnits = numDataUnits + numParityUnits - 1;
+    ECBlock[] outputBlocks = new TestBlock[totalUnits];
+
+    for (int i = 0; i < numDataUnits; i++) {
+      dataBlocks[i] = generateDataBlock();
+    }
+
+    for (int i = 0; i < totalUnits; i++) {
+      outputBlocks[i] = allocateOutputBlock();
+    }
+
+    return new ECBlockGroup(dataBlocks, outputBlocks);
   }
 
   /**

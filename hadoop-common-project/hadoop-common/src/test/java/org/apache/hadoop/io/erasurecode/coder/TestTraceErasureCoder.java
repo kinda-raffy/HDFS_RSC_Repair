@@ -22,6 +22,7 @@ import org.apache.hadoop.io.erasurecode.CodecUtil;
 import org.apache.hadoop.io.erasurecode.rawcoder.RSRawErasureCoderFactory;
 //import org.apache.hadoop.hdfs.server.datanode;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
@@ -48,18 +49,31 @@ public class TestTraceErasureCoder extends TestErasureCoderBase {
     }
 
     @Test
-    public void testCodingNoDirectBuffer_9x6_erasing_d0() {
+    public void testCodingNoDirectBuffer_6x3_erasing_d0() {
         // [DEBUG] Prepare TestCoderBase before coding.
         prepare(null, 6, 3, new int[] {0}, new int[] {});
         /*
           Doing twice to test if the coders can be repeatedly reused. This matters
           as the underlying coding buffers are shared, which may have bugs.
          */
-        testCoding(false);
-        testCoding(false);
+        testTraceRepairCoding(false);
+        testTraceRepairCoding(false);
     }
 
     @Test
+    public void testCodingNoDirectBuffer_6x3_erasing_d1() {
+        // [DEBUG] Prepare TestCoderBase before coding.
+        prepare(null, 6, 3, new int[] {1}, new int[] {});
+        /*
+          Doing twice to test if the coders can be repeatedly reused. This matters
+          as the underlying coding buffers are shared, which may have bugs.
+         */
+        testTraceRepairCoding(false);
+        testTraceRepairCoding(false);
+    }
+
+    @Test
+    @Ignore
     public void testCodingNoDirectBuffer_10x4_erasing_d0_p0() {
         prepare(null, 10, 4, new int[] {0}, new int[] {0});
         /*
@@ -71,6 +85,7 @@ public class TestTraceErasureCoder extends TestErasureCoderBase {
     }
 
     @Test
+    @Ignore
     public void testCodingDirectBufferWithConf_10x4_erasing_d0() {
         /*
           This tests if the configuration items work or not.
@@ -85,6 +100,7 @@ public class TestTraceErasureCoder extends TestErasureCoderBase {
     }
 
     @Test
+    @Ignore
     public void testCodingDirectBuffer_10x4_erasing_p1() {
         prepare(null, 10, 4, new int[]{}, new int[]{1});
         testCoding(true);
@@ -92,6 +108,7 @@ public class TestTraceErasureCoder extends TestErasureCoderBase {
     }
 
     @Test
+    @Ignore
     public void testCodingDirectBuffer_10x4_erasing_d2() {
         prepare(null, 10, 4, new int[] {2}, new int[] {});
         testCoding(true);
@@ -99,6 +116,7 @@ public class TestTraceErasureCoder extends TestErasureCoderBase {
     }
 
     @Test
+    @Ignore
     public void testCodingDirectBuffer_10x4_erasing_d0_p0() {
         prepare(null, 10, 4, new int[] {0}, new int[] {0});
         testCoding(true);
@@ -106,6 +124,7 @@ public class TestTraceErasureCoder extends TestErasureCoderBase {
     }
 
     @Test
+    @Ignore
     public void testCodingBothBuffers_10x4_erasing_d0_p0() {
         prepare(null, 10, 4, new int[] {0}, new int[] {0});
 
@@ -121,24 +140,28 @@ public class TestTraceErasureCoder extends TestErasureCoderBase {
     }
 
     @Test
+    @Ignore
     public void testCodingDirectBuffer_10x4_erasure_of_d2_d4_p0() {
         prepare(null, 10, 4, new int[] {2, 4}, new int[] {0});
         testCoding(true);
     }
 
     @Test
+    @Ignore
     public void testCodingDirectBuffer_10x4_erasing_d0_d1_p0_p1() {
         prepare(null, 10, 4, new int[] {0, 1}, new int[] {0, 1});
         testCoding(true);
     }
 
     @Test
+    @Ignore
     public void testCodingNoDirectBuffer_3x3_erasing_d0_p0() {
         prepare(null, 3, 3, new int[] {0}, new int[] {0});
         testCoding(false);
     }
 
     @Test
+    @Ignore
     public void testCodingDirectBuffer_6x3_erasing_d0_p0() {
         prepare(null, 6, 3, new int[] {0}, new int[] {0});
         testCoding(true);

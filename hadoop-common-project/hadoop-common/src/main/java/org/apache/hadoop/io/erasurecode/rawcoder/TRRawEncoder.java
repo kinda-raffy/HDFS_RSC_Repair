@@ -25,8 +25,8 @@ import org.apache.hadoop.io.erasurecode.coder.util.tracerepair.HelperTable;
 import org.apache.hadoop.io.erasurecode.rawcoder.util.DumpUtil;
 import org.apache.hadoop.io.erasurecode.rawcoder.util.RSUtil;
 
-import javax.annotation.Nullable;
-import java.util.Arrays;
+import java.io.IOException;
+import java.nio.ByteBuffer;
 
 /**
  * A raw erasure encoder in RS code scheme in pure Java in case native one
@@ -66,6 +66,41 @@ public class TRRawEncoder extends RawErasureEncoder {
     }
 
     @Override
+    public void encode(ByteBuffer[] inputs, ByteBuffer[] outputs)
+            throws IOException {
+        // [DEBUG] Inputs: data; Outputs: parity.
+        ByteBufferEncodingState bbeState
+                = new ByteBufferEncodingState(this, inputs, outputs, true);
+        boolean usingDirectBuffer = bbeState.usingDirectBuffer;
+        int dataLen = bbeState.encodeLength;
+        if (dataLen == 0) {
+            return;
+        }
+
+        int[] inputPositions = new int[inputs.length];
+        for (int i = 0; i < inputPositions.length; i++) {
+            if (inputs[i] != null) {
+                inputPositions[i] = inputs[i].position();
+            }
+        }
+
+        if (usingDirectBuffer) {
+            doEncode(bbeState);
+        } else {
+            ByteArrayEncodingState baeState = bbeState.convertToByteArrayState();
+            doEncode(baeState);
+        }
+
+        for (int i = 0; i < inputs.length; i++) {
+            if (inputs[i] != null) {
+                // dataLen bytes consumed
+                inputs[i].position(inputPositions[i] + dataLen);
+            }
+        }
+    }
+
+
+    @Override
     protected void doEncode(ByteBufferEncodingState encodingState) {
         throw new NotImplementedException("doEncode(ByteBufferEncodingState encodingState)");
         /*CoderUtil.resetOutputBuffers(
@@ -77,14 +112,12 @@ public class TRRawEncoder extends RawErasureEncoder {
 
     @Override
     protected void doEncode(ByteArrayEncodingState encodingState) {
-        doEncode(encodingState, null, 0);
+        doEncode(encodingState, 1);
     }
 
-    @Override
     protected void doEncode(
         ByteArrayEncodingState encodingState,
-        @Nullable Integer requestedNodeIndex,
-        int erasedIndex
+        int erasedNodeIndex
     ) {
         CoderUtil.resetOutputBuffers(
             encodingState.outputs,
@@ -97,7 +130,7 @@ public class TRRawEncoder extends RawErasureEncoder {
             encodingState.outputs, encodingState.outputOffsets
         );
 
-        int sourceCount = encodingState.inputs.length +
+        /*int sourceCount = encodingState.inputs.length +
             encodingState.outputs.length;
         byte[][] dataParityInputs
             = new byte[sourceCount][encodingState.encodeLength];
@@ -107,41 +140,61 @@ public class TRRawEncoder extends RawErasureEncoder {
             encodingState.encodeLength, dataParityInputs
         );
 
-        encodingState.outputs = new byte[sourceCount][];
-        if (requestedNodeIndex != null) {
-            repairTraceGeneration(requestedNodeIndex, erasedIndex,
-                dataParityInputs, encodingState.outputs, encodingState.encodeLength);
-            return;
-        }
         int totalNodeCount = getNumAllUnits();
-        for (int nodeIndex = 0; nodeIndex < totalNodeCount; nodeIndex++) {
-            if (nodeIndex == erasedIndex) { continue; }
-            repairTraceGeneration(nodeIndex, erasedIndex,
-                dataParityInputs, encodingState.outputs, encodingState.encodeLength);
-        }
+        // [WARN] We are assuming only one node is erased.
+        int totalErasedCount = 1;
+        for (int inputIndex = 0; inputIndex < totalNodeCount - totalErasedCount; inputIndex++) {
+            // if (inputIndex > encodingState.outputs.length - 1) { continue; }
+            // if (inputIndex == erasedNodeIndex) { continue; }
+            int activeNodeIndex = erasedNodeIndex <= inputIndex ?
+                inputIndex + 1 : inputIndex;
+            repairTraceGeneration(activeNodeIndex, inputIndex, erasedNodeIndex,
+                dataParityInputs, encodingState);
+        }*/
     }
 
     protected void repairTraceGeneration(
-        int nodeIndex, int erasedNodeIndex,
-        byte[][] inputs, byte[][] output, int encodeLength
+        int nodeIndex, int inputIndex, int erasedNodeIndex,
+        byte[][] inputs, ByteArrayEncodingState encodeState
     ) {
         assert(nodeIndex != erasedNodeIndex);
         byte bw = helperTable.getByte_9_6(nodeIndex, erasedNodeIndex, 0);
-        byte[] repairTrace = new byte[bw * encodeLength];
+        byte[] repairTrace = new byte[bw * encodeState.encodeLength];
         byte[] H = helperTable.getRow_9_6(nodeIndex, erasedNodeIndex);
         byte[] Hij = new byte[H.length - 1];
         System.arraycopy(H, 1, Hij, 0, Hij.length);
         int idx = 0;
         for (int a = 0; a < bw; a++) {
-            for (int testCodeWord = 0; testCodeWord < encodeLength; testCodeWord++) {
+            for (int testCodeWord = 0; testCodeWord < encodeState.encodeLength; testCodeWord++) {
                 byte parityCalculation = (byte) (Hij[a] & (inputs[nodeIndex][testCodeWord]));
                 int parityIndex = parityCalculation & 0xFF;
                 repairTrace[idx++] = preComputedParity[parityIndex];
             }
         }
-        output[nodeIndex] = repairTrace;
+
+        int chunkLength = encodeState.encodeLength;
+        int requiredWriteLength = bw * chunkLength;
+        int totalWriteLength = chunkLength * 8;
+
+        assert(requiredWriteLength <= totalWriteLength);
+        encodeTrace(repairTrace, encodeState.outputs[inputIndex]);
     }
 
+    public static void encodeTrace(byte[] source, byte[] output) {
+        // [FIXME] Deal with output offsets.
+        int bitToEncodeIndex = 0;
+        for (byte bit : source) {
+            assert(bit == 0 || bit == 1);
+            int outputElementIndex = bitToEncodeIndex / 8;
+            int bitPositionInElement = bitToEncodeIndex % 8;
+            if (bit == 1) {
+                output[outputElementIndex] |= (byte) (1 << (7 - bitPositionInElement));
+            } else {
+                output[outputElementIndex] &= (byte) ~(1 << (7 - bitPositionInElement));
+            }
+            bitToEncodeIndex++;
+        }
+    }
 
     private void combineDataParitySources(
         byte[][] dataInput, byte[][] parityInput,

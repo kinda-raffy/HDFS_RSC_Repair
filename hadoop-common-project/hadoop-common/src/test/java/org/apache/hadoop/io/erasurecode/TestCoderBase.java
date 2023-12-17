@@ -41,6 +41,7 @@ public abstract class TestCoderBase {
   protected int numDataUnits;
   protected int numParityUnits;
   protected int baseChunkSize = 1024;
+
   private int chunkSize = baseChunkSize;
   private BufferAllocator allocator;
 

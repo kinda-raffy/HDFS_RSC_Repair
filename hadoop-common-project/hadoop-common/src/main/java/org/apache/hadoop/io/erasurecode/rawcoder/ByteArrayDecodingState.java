@@ -36,12 +36,19 @@ class ByteArrayDecodingState extends DecodingState {
 
   ByteArrayDecodingState(RawErasureDecoder decoder, byte[][] inputs,
                          int[] erasedIndexes, byte[][] outputs) {
+    this(decoder, inputs, erasedIndexes, outputs, false);
+  }
+
+  ByteArrayDecodingState(RawErasureDecoder decoder, byte[][] inputs,
+                         int[] erasedIndexes, byte[][] outputs,
+                         boolean isTraceRepair) {
     this.decoder = decoder;
     this.inputs = inputs;
     this.outputs = outputs;
     this.erasedIndexes = erasedIndexes;
     byte[] validInput = CoderUtil.findFirstValidInput(inputs);
     this.decodeLength = validInput.length;
+    this.isTraceRepair = isTraceRepair;
 
     checkParameters(inputs, erasedIndexes, outputs);
     checkInputBuffers(inputs);

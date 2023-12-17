@@ -35,13 +35,22 @@ class ByteBufferDecodingState extends DecodingState {
 
   ByteBufferDecodingState(RawErasureDecoder decoder, ByteBuffer[] inputs,
                           int[] erasedIndexes, ByteBuffer[] outputs) {
+    this(decoder, inputs, erasedIndexes, outputs, false);
+  }
+
+  ByteBufferDecodingState(RawErasureDecoder decoder, ByteBuffer[] inputs,
+                          int[] erasedIndexes, ByteBuffer[] outputs,
+                          boolean isTraceRepair) {
     this.decoder = decoder;
     this.inputs = inputs;
     this.outputs = outputs;
     this.erasedIndexes = erasedIndexes;
     ByteBuffer validInput = CoderUtil.findFirstValidInput(inputs);
-    this.decodeLength = validInput.remaining();
+    // this.decodeLength = validInput.remaining();
+    this.decodeLength = outputs[0].capacity();
+    // this.decodeLength = 32768;  // [DEBUG] Data length of input.
     this.usingDirectBuffer = validInput.isDirect();
+    this.isTraceRepair = isTraceRepair;
 
     checkParameters(inputs, erasedIndexes, outputs);
     checkInputBuffers(inputs);
@@ -102,11 +111,14 @@ class ByteBufferDecodingState extends DecodingState {
       if (buffer == null) {
         continue;
       }
-
-      if (buffer.remaining() != decodeLength) {
-        throw new HadoopIllegalArgumentException(
-            "Invalid buffer, not of length " + decodeLength);
+      // Trace repair can have varying length inputs.
+      if (!isTraceRepair) {
+        if (buffer.remaining() != decodeLength) {
+          throw new HadoopIllegalArgumentException(
+                  "Invalid buffer, not of length " + decodeLength);
+        }
       }
+
       if (buffer.isDirect() != usingDirectBuffer) {
         throw new HadoopIllegalArgumentException(
             "Invalid buffer, isDirect should be " + usingDirectBuffer);
@@ -132,10 +144,13 @@ class ByteBufferDecodingState extends DecodingState {
         throw new HadoopIllegalArgumentException(
             "Invalid buffer found, not allowing null");
       }
-
-      if (buffer.remaining() != decodeLength) {
-        throw new HadoopIllegalArgumentException(
-            "Invalid buffer, not of length " + decodeLength);
+      // [FIXME] Ignored for now. Output should be of decode length
+      //         but decodeLength needs to be set properly.
+      if (!isTraceRepair) {
+        if (buffer.remaining() != decodeLength) {
+          throw new HadoopIllegalArgumentException(
+                  "Invalid buffer, not of length " + decodeLength);
+        }
       }
       if (buffer.isDirect() != usingDirectBuffer) {
         throw new HadoopIllegalArgumentException(

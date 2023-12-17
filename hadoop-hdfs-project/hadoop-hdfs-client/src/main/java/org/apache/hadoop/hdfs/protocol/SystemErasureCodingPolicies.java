@@ -70,8 +70,8 @@ public final class SystemErasureCodingPolicies {
 
   public static final byte TR_6_3_POLICY_ID = 6;
   private static final ErasureCodingPolicy SYS_POLICY6 =
-          new ErasureCodingPolicy(ErasureCodeConstants.TR_6_3_SCHEMA,
-                  DEFAULT_CELLSIZE, TR_6_3_POLICY_ID);
+      new ErasureCodingPolicy(ErasureCodeConstants.TR_6_3_SCHEMA,
+          DEFAULT_CELLSIZE, TR_6_3_POLICY_ID);
 
 
   // REPLICATION policy is always enabled.

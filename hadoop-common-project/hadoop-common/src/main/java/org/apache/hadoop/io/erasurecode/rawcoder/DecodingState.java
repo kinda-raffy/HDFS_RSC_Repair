@@ -28,6 +28,8 @@ class DecodingState {
   RawErasureDecoder decoder;
   int decodeLength;
 
+  boolean isTraceRepair;
+
   /**
    * Check and validate decoding parameters, throw exception accordingly. The
    * checking assumes it's a MDS code. Other code  can override this.
@@ -37,8 +39,11 @@ class DecodingState {
    */
   <T> void checkParameters(T[] inputs, int[] erasedIndexes,
                            T[] outputs) {
-    if (inputs.length != decoder.getNumParityUnits() +
-        decoder.getNumDataUnits()) {
+    boolean validInputLength = isTraceRepair ?
+            // inputs.length == decoder.getNumAllUnits() - erasedIndexes.length : [FIXME] We should not send an empty trace over.
+            inputs.length == decoder.getNumAllUnits() :
+            inputs.length == decoder.getNumDataUnits() + decoder.getNumParityUnits();
+    if (!validInputLength) {
       throw new IllegalArgumentException("Invalid inputs length");
     }
 

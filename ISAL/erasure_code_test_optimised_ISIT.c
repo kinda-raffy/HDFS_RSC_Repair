@@ -849,17 +849,21 @@ unsigned char* repair_trace_optimised(int n, int j, unsigned char **buffs, doubl
 	}
 
     // [DEBUG] Print bandwidths.
-    for (i = 0; i < n; i++) {
+    /*for (i = 0; i < n; i++) {
         unsigned char bandwidth = h_RTable[i][j][0];
-        printf("[Trace] %d contains: %d.\n", i, bandwidth * TEST_LEN);
-    }
-    // for (i = 0; i < TEST_LEN; i++) {
-    //     printf("%d ", buffs[0][i]);
-    // }
+        printf("[Trace] %d contains: %d.\n", i, bandwidth);
+    }*/
 
-    // for (i = 0; i < TEST_LEN; i++) {
-    //     printf("%d ", RepairTrArray[0][i]);
-    // }
+    printf("\n");
+    for (int pr = 0; pr < n; pr++) {
+        printf("Node %d with bw %d:\n[", pr, bw[pr]);
+        for (int pr2 = 0; pr2 < bw[pr] * TEST_LEN; pr2++) {
+            printf("%d, ", RepairTrArray[pr][pr2]);
+        }
+        printf("]\n");
+    }
+    printf("\n");
+
 
     printf("\nRepairTrAsNumbers: ");
     for (i = 0; i < n; i++) {
@@ -872,7 +876,8 @@ unsigned char* repair_trace_optimised(int n, int j, unsigned char **buffs, doubl
                 for (a = 0; a < bw[i]; a++){
                     //for (a = bw[i]-1; a >= 0; a--){
                     traces_as_number = traces_as_number << 1;
-                    traces_as_number ^= RepairTrArray[i][a*TEST_LEN+test_codeword];
+                    unsigned char valueToXOR = RepairTrArray[i][a*TEST_LEN+test_codeword];
+                    traces_as_number ^= valueToXOR;
                 }
                 // [DEBUG] Stored as a single decimal array.
                 RepairTrAsNumbers[idx++] = traces_as_number;	// idx = i*TEST_LEN + test_codeword
@@ -882,6 +887,12 @@ unsigned char* repair_trace_optimised(int n, int j, unsigned char **buffs, doubl
         }
         printf("\n");
     }
+
+    printf("\n RepairTrAsNumbers whole: \n");
+    for (int pr = 0; pr < n * TEST_LEN; pr++) {
+        printf("%d, ", RepairTrAsNumbers[pr]);
+    }
+    printf("]\n");
 
     end = clock();
     double elapsed_decimal = (double)(end - start)/CLOCKS_PER_SEC;
@@ -910,10 +921,10 @@ unsigned char* repair_trace_optimised(int n, int j, unsigned char **buffs, doubl
         }
     }
     printf("RevMem: \n[");
-    for (int i = 0; i < n * 256; i++) {
+    for (i = 0; i < n * 256; i++) {
         printf("%d, ", revMem[i]);
     }
-    printf("]\n");
+    printf("]\n Length: %d\n", i);
 
     // [MARK] Construct cj.
     for (i = 0; i < n; i++) {
@@ -934,14 +945,17 @@ unsigned char* repair_trace_optimised(int n, int j, unsigned char **buffs, doubl
                 rev[test_codeword] = debugRes;
                 // rev[test_codeword] ^= debugRevMem;
 			}
+            printf("Rev: \n[");
+            for (int pr = 0; pr < TEST_LEN; pr++) {
+                printf("%d, ", rev[pr]);
+            }
+            printf("]\n");
+            for (int pr = 0; pr < TEST_LEN; pr++) {
+                printf("%d, ", rev[pr] > 127 ? rev[pr] - 256 : rev[pr]);
+            }
+            printf("]\n");
     	}
     }
-    printf("Rev: \n[");
-    for (int i = 0; i < TEST_LEN; i++) {
-        printf("%d, ", rev[i]);
-    }
-    printf("]\n");
-
     end = clock();
     double elapsed_rev = (double)(end - start)/CLOCKS_PER_SEC;
     printf("Recover cj: %f secs \n", elapsed_rev);
@@ -977,21 +991,21 @@ static void gen_err_list_single_erasure(unsigned char *src_err_list,
 	int i, err;
 	int nerrs = 0, nsrcerrs = 0;
 	
-	nerrs = 1;					//number of erasure = 1
-	err = rand() % m;			//err can be a random position between 0 and m-1
-	src_err_list[0] = err;		//record the error position (only one)
+	nerrs = 1;					// number of erasure = 1
+	err = rand() % m;			// err can be a random position between 0 and m-1
+	src_err_list[0] = err;		// record the error position (only one)
 	
-	nsrcerrs = 0;				//count if a source/data position is erased or not
+	nsrcerrs = 0;				// count if a source/data position is erased or not
 	if (err < k){
 		nsrcerrs = 1;
 	}
 	
 	for (i = 0; i < m; i++) 	
 		src_in_err[i] = 0;		
-	src_in_err[err] = 1;		//set the reverse array: src_in_err[i] = 1 if and only if ci is erased
+	src_in_err[err] = 1;		// set the reverse array: src_in_err[i] = 1 if and only if ci is erased
 		
 	*pnerrs = nerrs;
-	*pnsrcerrs = nsrcerrs;// number of data error
+	*pnsrcerrs = nsrcerrs;      // number of data error
 	return;
 }
 
@@ -1098,7 +1112,7 @@ int main(int argc, char *argv[])
     for(int err = 0; err < nerrs; err++){
         // [DEBUG] j is the index of the faulty node.
         // j = src_err_list[err];
-        j = 0;
+        j = 1;
         rev = repair_trace_optimised(m, j, buffs, &trace_repair_time_accurate);
         // Compare recovered data with original data
         // this is check step for repair_trace_optimised

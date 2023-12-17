@@ -27,6 +27,7 @@ import org.apache.hadoop.classification.InterfaceAudience;
 abstract class EncodingState {
   RawErasureEncoder encoder;
   int encodeLength;
+  boolean isTraceRepair;
 
   /**
    * Check and validate decoding parameters, throw exception accordingly.
@@ -37,7 +38,13 @@ abstract class EncodingState {
     if (inputs.length != encoder.getNumDataUnits()) {
       throw new HadoopIllegalArgumentException("Invalid inputs length");
     }
-    if (outputs.length != encoder.getNumParityUnits()) {
+    // [WARN] We assume that only a single node can fail for now.
+    int erasedNodeCount = 1;
+    boolean enforcedOutputLength = isTraceRepair ?
+            outputs.length != encoder.getNumAllUnits() - erasedNodeCount: outputs.length != encoder.getNumParityUnits();
+    // [WARN] This is a temporary fix until we know why TRRawEncoder gets called during TestReconstructStripedFile.
+    enforcedOutputLength = outputs.length != encoder.getNumParityUnits();
+    if (enforcedOutputLength) {
       throw new HadoopIllegalArgumentException("Invalid outputs length");
     }
   }

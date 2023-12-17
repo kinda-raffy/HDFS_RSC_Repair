@@ -35,11 +35,18 @@ class ByteArrayEncodingState extends EncodingState {
 
   ByteArrayEncodingState(RawErasureEncoder encoder,
                          byte[][] inputs, byte[][] outputs) {
+    this(encoder, inputs, outputs, false);
+  }
+
+  ByteArrayEncodingState(RawErasureEncoder encoder,
+                         byte[][] inputs, byte[][] outputs,
+                         boolean isTraceRepair) {
     this.encoder = encoder;
     byte[] validInput = CoderUtil.findFirstValidInput(inputs);
     this.encodeLength = validInput.length;
     this.inputs = inputs;
     this.outputs = outputs;
+    this.isTraceRepair = isTraceRepair;
 
     checkParameters(inputs, outputs);
     checkBuffers(inputs);
