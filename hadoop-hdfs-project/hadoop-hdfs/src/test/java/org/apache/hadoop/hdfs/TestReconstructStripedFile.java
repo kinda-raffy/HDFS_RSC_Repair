@@ -75,7 +75,7 @@ import org.apache.hadoop.util.OurTestLogger;
 
 public class TestReconstructStripedFile {
   public static final Logger LOG =
-      LoggerFactory.getLogger(TestReconstructStripedFile.class);
+          LoggerFactory.getLogger(TestReconstructStripedFile.class);
 
   private ErasureCodingPolicy ecPolicy;
   private int dataBlkNum;
@@ -121,7 +121,7 @@ public class TestReconstructStripedFile {
 
   public int getPendingTimeout() {
     return DFSConfigKeys
-        .DFS_NAMENODE_RECONSTRUCTION_PENDING_TIMEOUT_SEC_DEFAULT;
+            .DFS_NAMENODE_RECONSTRUCTION_PENDING_TIMEOUT_SEC_DEFAULT;
   }
 
   public int getBlockSize() {
@@ -148,21 +148,21 @@ public class TestReconstructStripedFile {
     conf = new Configuration();
     conf.setLong(DFSConfigKeys.DFS_BLOCK_SIZE_KEY, blockSize);
     conf.setInt(
-        DFSConfigKeys.DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_BUFFER_SIZE_KEY,
-        cellSize - 1);
+            DFSConfigKeys.DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_BUFFER_SIZE_KEY,
+            cellSize - 1);
     conf.setInt(DFSConfigKeys.DFS_NAMENODE_REDUNDANCY_INTERVAL_SECONDS_KEY, 1);
     if (ErasureCodeNative.isNativeCodeLoaded()) {
       conf.set(
-          CodecUtil.IO_ERASURECODE_CODEC_RS_RAWCODERS_KEY,
-          NativeRSRawErasureCoderFactory.CODER_NAME);
+              CodecUtil.IO_ERASURECODE_CODEC_RS_RAWCODERS_KEY,
+              NativeRSRawErasureCoderFactory.CODER_NAME);
     }
     conf.setInt(
-        DFSConfigKeys.DFS_NAMENODE_RECONSTRUCTION_PENDING_TIMEOUT_SEC_KEY,
-        getPendingTimeout());
+            DFSConfigKeys.DFS_NAMENODE_RECONSTRUCTION_PENDING_TIMEOUT_SEC_KEY,
+            getPendingTimeout());
     conf.setBoolean(DFSConfigKeys.DFS_DN_EC_RECONSTRUCTION_VALIDATION_KEY,
-        isValidationEnabled());
+            isValidationEnabled());
     cluster = new MiniDFSCluster.Builder(conf, baseDir.getRoot()).numDataNodes(dnNum)
-        .build();
+            .build();
     cluster.waitActive();
     random.setSeed(100);
 
@@ -326,7 +326,7 @@ public class TestReconstructStripedFile {
         ReconstructionType.Any, random.nextInt(parityBlkNum) + 1);
   }*/
   private int[] generateDeadDnIndices(ReconstructionType type, int deadNum,
-      byte[] indices) {
+                                      byte[] indices) {
     List<Integer> deadList = new ArrayList<>(deadNum);
     while (deadList.size() < deadNum) {
       int dead = random.nextInt(indices.length);
@@ -360,21 +360,21 @@ public class TestReconstructStripedFile {
   }
 
   private int generateErrors(Map<ExtendedBlock, DataNode> corruptTargets,
-      ReconstructionType type)
-    throws IOException {
+                             ReconstructionType type)
+          throws IOException {
     int stoppedDNs = 0;
     for (Map.Entry<ExtendedBlock, DataNode> target :
-        corruptTargets.entrySet()) {
+            corruptTargets.entrySet()) {
       if (stoppedDNs == 0 || type != ReconstructionType.DataOnly
-          || random.nextBoolean()) {
+              || random.nextBoolean()) {
         // stop at least one DN to trigger reconstruction
         LOG.info("Note: stop DataNode " + target.getValue().getDisplayName()
-            + " with internal block " + target.getKey());
+                + " with internal block " + target.getKey());
         shutdownDataNode(target.getValue());
         stoppedDNs++;
       } else { // corrupt the data on the DN
         LOG.info("Note: corrupt data on " + target.getValue().getDisplayName()
-            + " with internal block " + target.getKey());
+                + " with internal block " + target.getKey());
         cluster.corruptReplica(target.getValue(), target.getKey());
       }
     }
@@ -397,7 +397,7 @@ public class TestReconstructStripedFile {
   }*/
 
   private static void writeFile(DistributedFileSystem fs, String fileName,
-      int fileLen) throws Exception {
+                                int fileLen) throws Exception {
     final byte[] data = new byte[fileLen];
     Arrays.fill(data, (byte) 78);
     DFSTestUtil.writeFile(fs, new Path(fileName), data);
@@ -536,7 +536,7 @@ public class TestReconstructStripedFile {
   // [TODO] Can this be combined with the above? Note, this is
   //        by another test case {@link TestReconstructStripedFileWithValidator}.
   void assertFileBlocksReconstruction(String fileName, int fileLen,
-      ReconstructionType type, int toRecoverBlockNum) throws Exception {
+                                      ReconstructionType type, int toRecoverBlockNum) throws Exception {
     if (toRecoverBlockNum < 1 || toRecoverBlockNum > parityBlkNum) {
       Assert.fail("toRecoverBlockNum should be between 1 ~ " + parityBlkNum);
     }
@@ -547,11 +547,11 @@ public class TestReconstructStripedFile {
     writeFile(fs, fileName, fileLen);
 
     LocatedBlocks locatedBlocks =
-        StripedFileTestUtil.getLocatedBlocks(file, fs);
+            StripedFileTestUtil.getLocatedBlocks(file, fs);
     assertEquals(locatedBlocks.getFileLength(), fileLen);
 
     LocatedStripedBlock lastBlock =
-        (LocatedStripedBlock)locatedBlocks.getLastLocatedBlock();
+            (LocatedStripedBlock)locatedBlocks.getLastLocatedBlock();
 
     DatanodeInfo[] storageInfos = lastBlock.getLocations();
     byte[] indices = lastBlock.getBlockIndices();
@@ -563,7 +563,7 @@ public class TestReconstructStripedFile {
 
     int[] dead = generateDeadDnIndices(type, toRecoverBlockNum, indices);
     LOG.info("Note: indices == " + Arrays.toString(indices)
-        + ". Generate errors on datanodes: " + Arrays.toString(dead));
+            + ". Generate errors on datanodes: " + Arrays.toString(dead));
 
     DatanodeInfo[] dataDNs = new DatanodeInfo[toRecoverBlockNum];
     int[] deadDnIndices = new int[toRecoverBlockNum];
@@ -579,24 +579,24 @@ public class TestReconstructStripedFile {
 
       // Check the block replica file on deadDn before it dead.
       blocks[i] = StripedBlockUtil.constructInternalBlock(
-          lastBlock.getBlock(), cellSize, dataBlkNum, indices[dead[i]]);
+              lastBlock.getBlock(), cellSize, dataBlkNum, indices[dead[i]]);
       errorMap.put(blocks[i], cluster.getDataNodes().get(deadDnIndices[i]));
       replicas[i] = cluster.getBlockFile(deadDnIndices[i], blocks[i]);
       replicaLengths[i] = replicas[i].length();
       metadatas[i] = cluster.getBlockMetadataFile(deadDnIndices[i], blocks[i]);
       // the block replica on the datanode should be the same as expected
       assertEquals(replicaLengths[i],
-          StripedBlockUtil.getInternalBlockLength(
-          lastBlock.getBlockSize(), cellSize, dataBlkNum, indices[dead[i]]));
+              StripedBlockUtil.getInternalBlockLength(
+                      lastBlock.getBlockSize(), cellSize, dataBlkNum, indices[dead[i]]));
       assertTrue(metadatas[i].getName().
-          endsWith(blocks[i].getGenerationStamp() + ".meta"));
+              endsWith(blocks[i].getGenerationStamp() + ".meta"));
       LOG.info("replica " + i + " locates in file: " + replicas[i]);
       replicaContents[i] = DFSTestUtil.readFileAsBytes(replicas[i]);
     }
 
     int lastGroupDataLen = fileLen % (dataBlkNum * blockSize);
     int lastGroupNumBlk = lastGroupDataLen == 0 ? dataBlkNum :
-        Math.min(dataBlkNum, ((lastGroupDataLen - 1) / cellSize + 1));
+            Math.min(dataBlkNum, ((lastGroupDataLen - 1) / cellSize + 1));
     int groupSize = lastGroupNumBlk + parityBlkNum;
 
     // shutdown datanodes or generate corruption
@@ -625,13 +625,13 @@ public class TestReconstructStripedFile {
       File replicaAfterReconstruction = cluster.getBlockFile(targetDNs[i], blocks[i]);
       LOG.info("replica after reconstruction " + replicaAfterReconstruction);
       File metadataAfterReconstruction =
-          cluster.getBlockMetadataFile(targetDNs[i], blocks[i]);
+              cluster.getBlockMetadataFile(targetDNs[i], blocks[i]);
       assertEquals(replicaLengths[i], replicaAfterReconstruction.length());
       LOG.info("replica before " + replicas[i]);
       assertTrue(metadataAfterReconstruction.getName().
-          endsWith(blocks[i].getGenerationStamp() + ".meta"));
+              endsWith(blocks[i].getGenerationStamp() + ".meta"));
       byte[] replicaContentAfterReconstruction =
-          DFSTestUtil.readFileAsBytes(replicaAfterReconstruction);
+              DFSTestUtil.readFileAsBytes(replicaAfterReconstruction);
 
       Assert.assertArrayEquals(replicaContents[i], replicaContentAfterReconstruction);
     }
@@ -691,7 +691,7 @@ public class TestReconstructStripedFile {
       }
       if (result[i] == -1) {
         Assert.fail("Failed to reconstruct striped block: "
-            + blocks[i].getBlockId());
+                + blocks[i].getBlockId());
       }
     }
     return result;
@@ -862,10 +862,10 @@ public class TestReconstructStripedFile {
   @Test(timeout = 120000)
   public void testTimeoutReadBlockInReconstruction() throws Exception {
     assumeTrue("Ignore case where num parity units <= 1",
-        ecPolicy.getNumParityUnits() > 1);
+            ecPolicy.getNumParityUnits() > 1);
     int stripedBufferSize = conf.getInt(
-        DFSConfigKeys.DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_BUFFER_SIZE_KEY,
-        cellSize);
+            DFSConfigKeys.DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_BUFFER_SIZE_KEY,
+            cellSize);
     ErasureCodingPolicy policy = ecPolicy;
     fs.enableErasureCodingPolicy(policy.getName());
     fs.getClient().setErasureCodingPolicy("/", policy.getName());
@@ -878,7 +878,7 @@ public class TestReconstructStripedFile {
     fs.getFileBlockLocations(file, 0, fileLen);
 
     LocatedBlocks locatedBlocks =
-        StripedFileTestUtil.getLocatedBlocks(file, fs);
+            StripedFileTestUtil.getLocatedBlocks(file, fs);
     Assert.assertEquals(1, locatedBlocks.getLocatedBlocks().size());
     // The file only has one block group
     LocatedBlock lblock = locatedBlocks.get(0);
@@ -888,13 +888,13 @@ public class TestReconstructStripedFile {
     DataNode dataNode = cluster.getDataNode(datanodeinfos[0].getIpcPort());
 
     int stripedReadTimeoutInMills = conf.getInt(
-        DFSConfigKeys.DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_TIMEOUT_MILLIS_KEY,
-        DFSConfigKeys.
-            DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_TIMEOUT_MILLIS_DEFAULT);
+            DFSConfigKeys.DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_TIMEOUT_MILLIS_KEY,
+            DFSConfigKeys.
+                    DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_TIMEOUT_MILLIS_DEFAULT);
     Assert.assertTrue(
-        DFSConfigKeys.DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_TIMEOUT_MILLIS_KEY
-            + " must be greater than 2000",
-        stripedReadTimeoutInMills > 2000);
+            DFSConfigKeys.DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_TIMEOUT_MILLIS_KEY
+                    + " must be greater than 2000",
+            stripedReadTimeoutInMills > 2000);
 
     DataNodeFaultInjector oldInjector = DataNodeFaultInjector.get();
     DataNodeFaultInjector timeoutInjector = new DataNodeFaultInjector() {
@@ -910,8 +910,8 @@ public class TestReconstructStripedFile {
         if (index == 1) {
           try {
             GenericTestUtils.waitFor(() -> numDelayReader.get() >=
-                    ecPolicy.getNumDataUnits() + 1, 50,
-                stripedReadTimeoutInMills * 3
+                            ecPolicy.getNumDataUnits() + 1, 50,
+                    stripedReadTimeoutInMills * 3
             );
           } catch (TimeoutException e) {
             Assert.fail("Can't reconstruct the file's first part.");
@@ -935,7 +935,7 @@ public class TestReconstructStripedFile {
       shutdownDataNode(dataNode);
       // before HDFS-15240, NPE will cause reconstruction fail(test timeout)
       StripedFileTestUtil
-          .waitForReconstructionFinished(file, fs, groupSize);
+              .waitForReconstructionFinished(file, fs, groupSize);
     } finally {
       DataNodeFaultInjector.set(oldInjector);
     }
@@ -950,10 +950,10 @@ public class TestReconstructStripedFile {
   @Test(timeout = 120000)
   public void testAbnormallyCloseDoesNotWriteBufferAgain() throws Exception {
     assumeTrue("Ignore case where num parity units <= 1",
-        ecPolicy.getNumParityUnits() > 1);
+            ecPolicy.getNumParityUnits() > 1);
     int stripedBufferSize = conf.getInt(
-        DFSConfigKeys.DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_BUFFER_SIZE_KEY,
-        cellSize);
+            DFSConfigKeys.DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_BUFFER_SIZE_KEY,
+            cellSize);
     // StripedBlockReconstructor#reconstruct will loop 2 times
     final int fileLen = stripedBufferSize * 2 * ecPolicy.getNumDataUnits();
     String fileName = "/no-dirty-buffer";
@@ -962,7 +962,7 @@ public class TestReconstructStripedFile {
     fs.getFileBlockLocations(file, 0, fileLen);
 
     LocatedBlocks locatedBlocks =
-        StripedFileTestUtil.getLocatedBlocks(file, fs);
+            StripedFileTestUtil.getLocatedBlocks(file, fs);
     Assert.assertEquals(1, locatedBlocks.getLocatedBlocks().size());
     // The file only has one block group
     LocatedBlock lblock = locatedBlocks.get(0);
@@ -972,16 +972,16 @@ public class TestReconstructStripedFile {
     DataNode dataNode = cluster.getDataNode(datanodeinfos[0].getIpcPort());
 
     int stripedReadTimeoutInMills = conf.getInt(
-        DFSConfigKeys.DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_TIMEOUT_MILLIS_KEY,
-        DFSConfigKeys.
-            DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_TIMEOUT_MILLIS_DEFAULT);
+            DFSConfigKeys.DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_TIMEOUT_MILLIS_KEY,
+            DFSConfigKeys.
+                    DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_TIMEOUT_MILLIS_DEFAULT);
     Assert.assertTrue(
-        DFSConfigKeys.DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_TIMEOUT_MILLIS_KEY
-            + " must be greater than 2000",
-        stripedReadTimeoutInMills > 2000);
+            DFSConfigKeys.DFS_DN_EC_RECONSTRUCTION_STRIPED_READ_TIMEOUT_MILLIS_KEY
+                    + " must be greater than 2000",
+            stripedReadTimeoutInMills > 2000);
 
     ElasticByteBufferPool bufferPool =
-        (ElasticByteBufferPool) ErasureCodingTestHelper.getBufferPool();
+            (ElasticByteBufferPool) ErasureCodingTestHelper.getBufferPool();
     emptyBufferPool(bufferPool, true);
     emptyBufferPool(bufferPool, false);
 
@@ -1003,8 +1003,8 @@ public class TestReconstructStripedFile {
         if (index == 1) {
           try {
             GenericTestUtils.waitFor(() -> numDelayReader.get() >=
-                    ecPolicy.getNumDataUnits() + 1, 50,
-                stripedReadTimeoutInMills * 3
+                            ecPolicy.getNumDataUnits() + 1, 50,
+                    stripedReadTimeoutInMills * 3
             );
           } catch (TimeoutException e) {
             Assert.fail("Can't reconstruct the file's first part.");
@@ -1014,12 +1014,12 @@ public class TestReconstructStripedFile {
         if (index > ecPolicy.getNumDataUnits() + 1) {
           try {
             GenericTestUtils.waitFor(
-                () -> {
-                  LOG.info("Close by NPE: {}, continue read: {}",
-                      closeByNPE, continueRead);
-                  return closeByNPE.get() ? continueRead.get()
-                    : index == finishedReadBlock.get() + 1; }, 5,
-                stripedReadTimeoutInMills * 3
+                    () -> {
+                      LOG.info("Close by NPE: {}, continue read: {}",
+                              closeByNPE, continueRead);
+                      return closeByNPE.get() ? continueRead.get()
+                              : index == finishedReadBlock.get() + 1; }, 5,
+                    stripedReadTimeoutInMills * 3
             );
           } catch (TimeoutException e) {
             Assert.fail("Can't reconstruct the file's remaining part.");
@@ -1044,8 +1044,8 @@ public class TestReconstructStripedFile {
           continueRead.compareAndSet(false, true);
           try {
             GenericTestUtils.waitFor(() -> finishedReadBlock.get() >=
-                    2 * ecPolicy.getNumDataUnits() + 1, 50,
-                stripedReadTimeoutInMills * 3
+                            2 * ecPolicy.getNumDataUnits() + 1, 50,
+                    stripedReadTimeoutInMills * 3
             );
           } catch (TimeoutException e) {
             Assert.fail("Can't finish the file's reconstruction.");
@@ -1059,8 +1059,8 @@ public class TestReconstructStripedFile {
       shutdownDataNode(dataNode);
       // at least one timeout reader
       GenericTestUtils.waitFor(() -> finishedReadBlock.get() >=
-              2 * ecPolicy.getNumDataUnits() + 1, 50,
-          stripedReadTimeoutInMills * 3
+                      2 * ecPolicy.getNumDataUnits() + 1, 50,
+              stripedReadTimeoutInMills * 3
       );
 
       assertBufferPoolIsEmpty(bufferPool, false);
@@ -1072,7 +1072,7 @@ public class TestReconstructStripedFile {
   }
 
   private void assertBufferPoolIsEmpty(ElasticByteBufferPool bufferPool,
-      boolean direct) {
+                                       boolean direct) {
     while (bufferPool.size(direct) != 0) {
       // iterate all ByteBuffers in ElasticByteBufferPool
       ByteBuffer byteBuffer =  bufferPool.getBuffer(direct, 0);
@@ -1081,7 +1081,7 @@ public class TestReconstructStripedFile {
   }
 
   private void emptyBufferPool(ElasticByteBufferPool bufferPool,
-      boolean direct) {
+                               boolean direct) {
     while (bufferPool.size(direct) != 0) {
       bufferPool.getBuffer(direct, 0);
     }

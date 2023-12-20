@@ -474,15 +474,6 @@ class StripedReader {
           reconstructor.getBlockGroup().getBlockId();
       throw new IOException(error);
     }
-    // [TODO] Clean.
-    // for (int i = 0; i < successList.length; i++) {
-    //   int index = successList[i];
-    //   StripedBlockReader reader = getReader(index);
-    //   ByteBuffer buffer = reader.getReadBuffer();
-    //   byte[]test = buffer.array();
-    //   ourECLogger.write(this, datanode.getDatanodeUuid(), "doReadMinimumSources - reader.getIndex(): " + index + " - " +
-    //           Arrays.toString(Arrays.copyOfRange(test, 0, 30)));
-    // }
     return newSuccess;
   }
 

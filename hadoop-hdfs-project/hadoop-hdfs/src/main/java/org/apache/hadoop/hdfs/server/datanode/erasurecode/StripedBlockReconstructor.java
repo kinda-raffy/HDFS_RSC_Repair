@@ -21,11 +21,12 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.hdfs.server.datanode.DataNodeFaultInjector;
 import org.apache.hadoop.hdfs.server.datanode.metrics.DataNodeMetrics;
 import org.apache.hadoop.io.erasurecode.coder.util.tracerepair.RecoveryTable;
-import org.apache.hadoop.util.OurECLogger;
+import org.apache.hadoop.io.erasurecode.rawcoder.InvalidDecodingException;
 import org.apache.hadoop.util.Time;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 /**
  * StripedBlockReconstructor reconstruct one or more missed striped block in
@@ -34,18 +35,21 @@ import java.nio.ByteBuffer;
  */
 @InterfaceAudience.Private
 class StripedBlockReconstructor extends StripedReconstructor
-    implements Runnable {
+        implements Runnable {
   private final RecoveryTable recoveryTable = new RecoveryTable();
 
-  private OurECLogger ourECLogger = OurECLogger.getInstance();
+  private final int nodeCount = getStripedReader().numberOfInputs();
+  ByteBuffer[] totalByteBuffers = new ByteBuffer[nodeCount];
   private StripedWriter stripedWriter;
 
+  private ReconstructTargetInputs reconstructTargetInputs;
+
   StripedBlockReconstructor(ErasureCodingWorker worker,
-      StripedReconstructionInfo stripedReconInfo) {
+                            StripedReconstructionInfo stripedReconInfo) {
     super(worker, stripedReconInfo);
 
     stripedWriter = new StripedWriter(this, getDatanode(),
-        getConf(), stripedReconInfo);
+            getConf(), stripedReconInfo);
   }
 
   boolean hasValidTargets() {
@@ -54,7 +58,6 @@ class StripedBlockReconstructor extends StripedReconstructor
 
   @Override
   public void run() {
-    // [TODO] Clean.
     try {
       initDecoderIfNecessary();
       initDecodingValidatorIfNecessary();
@@ -87,11 +90,14 @@ class StripedBlockReconstructor extends StripedReconstructor
 
   @Override
   void reconstruct() throws IOException {
+    int erasedNodeIndex = getStripedReader().getErasedIndex();
+    reconstructTargetInputs =
+        new ReconstructTargetInputs(nodeCount, erasedNodeIndex, recoveryTable);
     while (getPositionInBlock() < getMaxTargetLength()) {
       DataNodeFaultInjector.get().stripedBlockReconstruction();
       long remaining = getMaxTargetLength() - getPositionInBlock();
       final int toReconstructLen =
-          (int) Math.min(getStripedReader().getBufferSize(), remaining);
+              (int) Math.min(getStripedReader().getBufferSize(), remaining);
 
       long start = Time.monotonicNow();
       long bytesToRead = (long) toReconstructLen * getStripedReader().getMinRequiredSources();
@@ -104,8 +110,8 @@ class StripedBlockReconstructor extends StripedReconstructor
       long readEnd = Time.monotonicNow();
 
       // step2: decode to reconstruct targets
-      mergeData(toReconstructLen);
-      // reconstructTargets();
+      // mergeData(toReconstructLen);
+      reconstructTargets(toReconstructLen);
       long decodeEnd = Time.monotonicNow();
 
       // step3: transfer data
@@ -127,18 +133,16 @@ class StripedBlockReconstructor extends StripedReconstructor
       updatePositionInBlock(toReconstructLen);
       clearBuffers();
     }
-    reconstructTargets();
+    // reconstructTargets();
   }
 
-
-  ByteBuffer[] receivedByteBuffers = new ByteBuffer[getStripedReader().numberOfInputs()];
   public static ByteBuffer concat(ByteBuffer[] buffers, int overallCapacity) {
     // ByteBuffer all = ByteBuffer.allocateDirect(overallCapacity);
     ByteBuffer all = ByteBuffer.allocate(overallCapacity);
-      for (ByteBuffer buffer : buffers) {
-          ByteBuffer curr = buffer.slice();
-          all.put(curr);
-      }
+    for (ByteBuffer buffer : buffers) {
+      ByteBuffer curr = buffer.slice();
+      all.put(curr);
+    }
     all.rewind();
     return all;
   }
@@ -154,7 +158,7 @@ class StripedBlockReconstructor extends StripedReconstructor
 
   private void updateByteBuffers(ByteBuffer [] inputs) {
     for (int i = 0; i < inputs.length; i++) {
-      ByteBuffer receivedByteBuffer = receivedByteBuffers[i];
+      ByteBuffer receivedByteBuffer = totalByteBuffers[i];
       ByteBuffer newInput = inputs[i];
       if (newInput == null) {
         continue;
@@ -162,12 +166,11 @@ class StripedBlockReconstructor extends StripedReconstructor
       if (receivedByteBuffer != null) {
         ByteBuffer[] temps = new ByteBuffer[] {receivedByteBuffer, newInput};
         int totalCapacity = receivedByteBuffer.capacity() + newInput.capacity();
-        receivedByteBuffers[i] = concat(temps, totalCapacity);
+        totalByteBuffers[i] = concat(temps, totalCapacity);
       } else {
-        receivedByteBuffers[i] = clone(newInput);
+        totalByteBuffers[i] = clone(newInput);
       }
     }
-
   }
 
   private void mergeData(int toReconstructLen) throws IOException {
@@ -175,7 +178,63 @@ class StripedBlockReconstructor extends StripedReconstructor
     updateByteBuffers(inputs);
   }
 
-  private void reconstructTargets() throws IOException {
+  ByteBuffer[] correct = null;
+  ByteBuffer[] current = null;
+
+  private void reconstructTargets(int toReconstructLen) throws IOException {
+    ByteBuffer[] inputs = getStripedReader().getInputBuffers(toReconstructLen);
+    reconstructTargetInputs.appendInputs(inputs, toReconstructLen);
+    ByteBuffer[] decoderInputs = reconstructTargetInputs.getInputs();
+
+    int[] erasedIndices = stripedWriter.getRealTargetIndices();
+    ByteBuffer[] outputs = stripedWriter.getRealTargetBuffers(toReconstructLen);
+
+    if (correct == null) {
+      correct = decoderInputs;
+    }
+    current = decoderInputs;
+
+    for (int i = 0; i < correct.length; i++) {
+      if (correct[i] == null) {
+        continue;
+      }
+      boolean same = Arrays.equals(correct[i].array(), current[i].array());
+      System.out.println(same);
+    }
+
+    boolean same = Arrays.equals(correct, current);
+
+    if (isValidationEnabled()) {
+      markBuffers(inputs);
+      decode(decoderInputs, erasedIndices, outputs);
+      resetBuffers(inputs);
+
+      DataNodeFaultInjector.get().badDecoding(outputs);
+      long start = Time.monotonicNow();
+      try {
+        getValidator().validate(inputs, erasedIndices, outputs);
+        long validateEnd = Time.monotonicNow();
+        getDatanode().getMetrics().incrECReconstructionValidateTime(
+                validateEnd - start);
+      } catch (InvalidDecodingException e) {
+        long validateFailedEnd = Time.monotonicNow();
+        getDatanode().getMetrics().incrECReconstructionValidateTime(
+                validateFailedEnd - start);
+        getDatanode().getMetrics().incrECInvalidReconstructionTasks();
+        throw e;
+      }
+    } else {
+      /*assert erasedIndices.length == 1;
+      byte[] output = outputs[0].array();
+      Arrays.fill(output, (byte) 78);*/
+      decode(decoderInputs, erasedIndices, outputs);
+    }
+
+    stripedWriter.updateRealTargetBuffers(toReconstructLen);
+    reconstructTargetInputs.forwardInputs();
+  }
+
+  /*private void reconstructTargets() throws IOException {
     long remaining = getMaxTargetLength() - getPositionInBlock();
     final int toReconstructLen =
             (int) Math.min(getStripedReader().getBufferSize(), remaining);
@@ -201,10 +260,10 @@ class StripedBlockReconstructor extends StripedReconstructor
     }
     decode(decoderInputs, new int[]{erasedNodeIndex}, decoderOutputs);
     stripedWriter.updateRealTargetBuffers(toReconstructLen);
-  }
+  }*/
 
   private void decode(ByteBuffer[] inputs, int[] erasedIndices,
-      ByteBuffer[] outputs) throws IOException {
+                      ByteBuffer[] outputs) throws IOException {
     long start = System.nanoTime();
     getDecoder().decode(inputs, erasedIndices, outputs);
     long end = System.nanoTime();
@@ -217,5 +276,110 @@ class StripedBlockReconstructor extends StripedReconstructor
   private void clearBuffers() {
     getStripedReader().clearBuffers();
     stripedWriter.clearBuffers();
+  }
+
+  static class ReconstructTargetInputs {
+    ByteBuffer[] inputs;
+    byte[] bandwidth;
+    int nodeCount;
+    int erasedNodeIndex;
+    RecoveryTable recoveryTable;
+    int[] bufferPointers = new int[nodeCount];
+
+    ReconstructTargetInputs(int nodeCount, int erasedNodeIndex, RecoveryTable recoveryTable) {
+      this.inputs = new ByteBuffer[nodeCount];
+      this.nodeCount = nodeCount;
+      this.erasedNodeIndex = erasedNodeIndex;
+      this.recoveryTable = recoveryTable;
+      this.bandwidth = new byte[nodeCount];
+      for (int nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++) {
+        bandwidth[nodeIndex] = recoveryTable.getByte_9_6(nodeIndex, erasedNodeIndex, 0);
+      }
+    }
+
+    public static ByteBuffer clone(ByteBuffer original) {
+      ByteBuffer clone = ByteBuffer.allocate(original.capacity());
+      original.rewind();  // Copy from the beginning.
+      clone.put(original);
+      original.rewind();
+      clone.flip();
+      return clone;
+    }
+
+    public static ByteBuffer concatenate(ByteBuffer[] buffers, int capacity) {
+      ByteBuffer out = ByteBuffer.allocate(capacity);
+      for (ByteBuffer buffer : buffers) {
+        ByteBuffer curr = buffer.slice();
+        out.put(curr);
+      }
+      out.position();
+      return out;
+    }
+
+    ByteBuffer[] correct = null;
+
+    void appendInputs(ByteBuffer[] receivedByteBuffers, int toReconstructLen) {
+      assert inputs.length == receivedByteBuffers.length;
+
+      if (correct == null) {
+        correct = receivedByteBuffers;
+      }
+      for (int i = 0; i < receivedByteBuffers.length; i++) {
+        if (receivedByteBuffers[i] == null) {
+          continue;
+        }
+        boolean same = Arrays.equals(correct[i].array(), receivedByteBuffers[i].array());
+        System.out.println(same);
+        assert same;
+      }
+
+
+      for (int nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++) {
+        if (nodeIndex == erasedNodeIndex) { continue; }
+        int originalPosition = receivedByteBuffers[nodeIndex].position();
+        if (inputs[nodeIndex] == null) {
+          inputs[nodeIndex] = clone(receivedByteBuffers[nodeIndex]);
+        } else {
+          ByteBuffer[] temps = new ByteBuffer[]{inputs[nodeIndex], receivedByteBuffers[nodeIndex]};
+          int totalCapacity = inputs[nodeIndex].capacity() + receivedByteBuffers[nodeIndex].capacity();
+          inputs[nodeIndex] = concat(temps, totalCapacity);
+          // ByteBuffer[] result = new ByteBuffer[inputs.length + receivedByteBuffers.length];
+          // System.arraycopy(inputs, 0, result, 0, inputs.length);
+          // System.arraycopy(receivedByteBuffers, 0, result, inputs.length, receivedByteBuffers.length);
+        }
+        receivedByteBuffers[nodeIndex].position(
+          originalPosition + (toReconstructLen * bandwidth[nodeIndex] / 8));
+      }
+    }
+
+    ByteBuffer[] getInputs() {
+      ByteBuffer[] decoderInputs = new ByteBuffer[nodeCount];
+      for (int nodeIndex = 0; nodeIndex < inputs.length; nodeIndex++) {
+        if (nodeIndex == erasedNodeIndex) { continue; }
+        int bandwidth = recoveryTable.getByte_9_6(nodeIndex, erasedNodeIndex, 0);
+        int inputLimit = 32768 * bandwidth / 8;
+        byte[] trimmedInput = new byte[inputLimit];
+        inputs[nodeIndex].position(bufferPointers[nodeIndex]);
+        inputs[nodeIndex].get(trimmedInput, 0, inputLimit);
+        decoderInputs[nodeIndex] = ByteBuffer.wrap(trimmedInput);
+      }
+      return decoderInputs;
+    }
+
+    void forwardInputs() {
+      for (int nodeIndex = 0; nodeIndex < inputs.length; nodeIndex++) {
+        if (nodeIndex == erasedNodeIndex) { continue; }
+        int bandwidth = recoveryTable.getByte_9_6(nodeIndex, erasedNodeIndex, 0);
+        bufferPointers[nodeIndex] = bufferPointers[nodeIndex] + 32768 * bandwidth / 8;
+      }
+      /*for (int nodeIndex = 0; nodeIndex < inputs.length; nodeIndex++) {
+        if (nodeIndex == erasedNodeIndex) { continue; }
+        ByteBuffer nodeBuffer = inputs[nodeIndex];
+        assert nodeBuffer != null;
+        int nodeBandwidth = bandwidth[nodeIndex];
+        int readAlready = nodeBuffer.position() + (inputs[nodeIndex].capacity() * nodeBandwidth / 8);
+        nodeBuffer.position(readAlready);
+      }*/
+    }
   }
 }

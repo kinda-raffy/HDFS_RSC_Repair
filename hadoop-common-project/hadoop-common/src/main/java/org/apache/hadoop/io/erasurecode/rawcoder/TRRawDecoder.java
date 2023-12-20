@@ -76,7 +76,8 @@ public class TRRawDecoder extends RawErasureDecoder {
         for (int i = 0; i < inputs.length; i++) {
             if (inputs[i] != null) {
                 // dataLen bytes consumed
-                inputs[i].position(inputPositions[i] + dataLen);
+                inputs[i].position(inputPositions[i] + (int) Math.ceil(dataLen * bw[i] / 8.0));
+                // inputs[i].position(inputPositions[i] + dataLen);
             }
         }
     }
@@ -112,7 +113,7 @@ public class TRRawDecoder extends RawErasureDecoder {
             if (i == erasedIdx) { continue; }
             // int activeNodeIndex = erasedIdx <= i ? i + 1 : i;  // [FIXME] Erased trace is null.
             binaryTraces[i] = decompressTrace(
-                decodingState.inputs[i],
+                decodingState.inputs[i], decodingState.inputOffsets[i],
                 bw[i] * decodingState.decodeLength);
         }
         byte[] decimalTrace = convertToDecimalTrace(
@@ -124,13 +125,13 @@ public class TRRawDecoder extends RawErasureDecoder {
         System.out.println(1);
     }
 
-    public static byte[] decompressTrace(byte[] compressedTrace, int numBitsToRead) {
+    public static byte[] decompressTrace(byte[] compressedTrace, int inputOffset, int numBitsToRead) {
         byte[] decompressedTrace = new byte[numBitsToRead];
         for (int bitIndex = 0; bitIndex < numBitsToRead; bitIndex++) {
             int byteIndex = bitIndex / 8;
             int bitPos = bitIndex % 8;
             byte mask = (byte) (1 << (7 - bitPos));
-            decompressedTrace[bitIndex] = (byte) ((compressedTrace[byteIndex] & mask) != 0 ? 1 : 0);
+            decompressedTrace[bitIndex] = (byte) ((compressedTrace[byteIndex + inputOffset] & mask) != 0 ? 1 : 0);
         }
         return decompressedTrace;
     }
