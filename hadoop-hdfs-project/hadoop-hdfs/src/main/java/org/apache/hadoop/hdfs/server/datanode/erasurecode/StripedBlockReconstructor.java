@@ -92,7 +92,7 @@ class StripedBlockReconstructor extends StripedReconstructor
   void reconstruct() throws IOException {
     int erasedNodeIndex = getStripedReader().getErasedIndex();
     reconstructTargetInputs =
-        new ReconstructTargetInputs(nodeCount, erasedNodeIndex, recoveryTable);
+        new ReconstructTargetInputs(nodeCount, getMaxTargetLength(), erasedNodeIndex, recoveryTable);
     while (getPositionInBlock() < getMaxTargetLength()) {
       DataNodeFaultInjector.get().stripedBlockReconstruction();
       long remaining = getMaxTargetLength() - getPositionInBlock();
@@ -283,9 +283,11 @@ class StripedBlockReconstructor extends StripedReconstructor
     int erasedNodeIndex;
     RecoveryTable recoveryTable;
     int[] bufferPointers;
+    byte[][] totalInputs;
 
-    ReconstructTargetInputs(int nodeCount, int erasedNodeIndex, RecoveryTable recoveryTable) {
+    ReconstructTargetInputs(int nodeCount, long maxTargetLength, int erasedNodeIndex, RecoveryTable recoveryTable) {
       this.inputs = new ByteBuffer[nodeCount];
+      this.totalInputs = new byte[nodeCount][(int) maxTargetLength];
       this.nodeCount = nodeCount;
       this.erasedNodeIndex = erasedNodeIndex;
       this.recoveryTable = recoveryTable;
@@ -338,15 +340,18 @@ class StripedBlockReconstructor extends StripedReconstructor
         if (nodeIndex == erasedNodeIndex) { continue; }
         assert receivedByteBuffers[nodeIndex] != null;
         int originalPosition = receivedByteBuffers[nodeIndex].position();
-        if (inputs[nodeIndex] == null) {
+
+        receivedByteBuffers[nodeIndex].get(totalInputs[nodeIndex], bufferPointers[nodeIndex], toReconstructLen);
+
+        /*if (inputs[nodeIndex] == null) {
           inputs[nodeIndex] = clone(receivedByteBuffers[nodeIndex]);
         } else {
           ByteBuffer[] temps = new ByteBuffer[]{inputs[nodeIndex], receivedByteBuffers[nodeIndex]};
           int totalCapacity = inputs[nodeIndex].capacity() + receivedByteBuffers[nodeIndex].capacity();
           inputs[nodeIndex] = concat(temps, totalCapacity);
-        }
-        receivedByteBuffers[nodeIndex].position(
-          originalPosition + (toReconstructLen * bandwidth[nodeIndex] / 8));
+        }*/
+        /*receivedByteBuffers[nodeIndex].position(
+          originalPosition + (toReconstructLen * bandwidth[nodeIndex] / 8));*/
       }
     }
 
@@ -356,10 +361,15 @@ class StripedBlockReconstructor extends StripedReconstructor
         if (nodeIndex == erasedNodeIndex) { continue; }
         int bandwidth = recoveryTable.getByte_9_6(nodeIndex, erasedNodeIndex, 0);
         int inputLimit = 32768 * bandwidth / 8;
+
         byte[] trimmedInput = new byte[inputLimit];
-        inputs[nodeIndex].position(bufferPointers[nodeIndex]);
-        inputs[nodeIndex].get(trimmedInput, 0, inputLimit);
+        System.arraycopy(totalInputs[nodeIndex], bufferPointers[nodeIndex], trimmedInput, 0, inputLimit);
         decoderInputs[nodeIndex] = ByteBuffer.wrap(trimmedInput);
+        /*byte[] trimmedInput = new byte[inputLimit];
+        // inputs[nodeIndex].position(bufferPointers[nodeIndex]);
+        inputs[nodeIndex].rewind();
+        inputs[nodeIndex].get(trimmedInput, 0, inputLimit);
+        decoderInputs[nodeIndex] = ByteBuffer.wrap(trimmedInput);*/
       }
       return decoderInputs;
     }
