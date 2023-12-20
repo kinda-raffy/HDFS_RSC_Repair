@@ -189,20 +189,18 @@ class StripedBlockReconstructor extends StripedReconstructor
     int[] erasedIndices = stripedWriter.getRealTargetIndices();
     ByteBuffer[] outputs = stripedWriter.getRealTargetBuffers(toReconstructLen);
 
-    if (correct == null) {
+    if (correct == null) {  // [DEBUG]
       correct = decoderInputs;
     }
     current = decoderInputs;
 
-    for (int i = 0; i < correct.length; i++) {
+    for (int i = 0; i < correct.length; i++) {  // [DEBUG]
       if (correct[i] == null) {
         continue;
       }
       boolean same = Arrays.equals(correct[i].array(), current[i].array());
       System.out.println(same);
     }
-
-    boolean same = Arrays.equals(correct, current);
 
     if (isValidationEnabled()) {
       markBuffers(inputs);
@@ -226,7 +224,7 @@ class StripedBlockReconstructor extends StripedReconstructor
     } else {
       /*assert erasedIndices.length == 1;
       byte[] output = outputs[0].array();
-      Arrays.fill(output, (byte) 78);*/
+      Arrays.fill(output, (byte) 78);*/  // [DEBUG]
       decode(decoderInputs, erasedIndices, outputs);
     }
 
@@ -284,13 +282,14 @@ class StripedBlockReconstructor extends StripedReconstructor
     int nodeCount;
     int erasedNodeIndex;
     RecoveryTable recoveryTable;
-    int[] bufferPointers = new int[nodeCount];
+    int[] bufferPointers;
 
     ReconstructTargetInputs(int nodeCount, int erasedNodeIndex, RecoveryTable recoveryTable) {
       this.inputs = new ByteBuffer[nodeCount];
       this.nodeCount = nodeCount;
       this.erasedNodeIndex = erasedNodeIndex;
       this.recoveryTable = recoveryTable;
+      this.bufferPointers = new int[nodeCount];
       this.bandwidth = new byte[nodeCount];
       for (int nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++) {
         bandwidth[nodeIndex] = recoveryTable.getByte_9_6(nodeIndex, erasedNodeIndex, 0);
@@ -312,15 +311,16 @@ class StripedBlockReconstructor extends StripedReconstructor
         ByteBuffer curr = buffer.slice();
         out.put(curr);
       }
-      out.position();
+      out.rewind();
       return out;
     }
 
-    ByteBuffer[] correct = null;
+    ByteBuffer[] correct = null;  // [DEBUG]
 
     void appendInputs(ByteBuffer[] receivedByteBuffers, int toReconstructLen) {
       assert inputs.length == receivedByteBuffers.length;
 
+      // [DEBUG]
       if (correct == null) {
         correct = receivedByteBuffers;
       }
@@ -336,6 +336,7 @@ class StripedBlockReconstructor extends StripedReconstructor
 
       for (int nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++) {
         if (nodeIndex == erasedNodeIndex) { continue; }
+        assert receivedByteBuffers[nodeIndex] != null;
         int originalPosition = receivedByteBuffers[nodeIndex].position();
         if (inputs[nodeIndex] == null) {
           inputs[nodeIndex] = clone(receivedByteBuffers[nodeIndex]);
@@ -343,9 +344,6 @@ class StripedBlockReconstructor extends StripedReconstructor
           ByteBuffer[] temps = new ByteBuffer[]{inputs[nodeIndex], receivedByteBuffers[nodeIndex]};
           int totalCapacity = inputs[nodeIndex].capacity() + receivedByteBuffers[nodeIndex].capacity();
           inputs[nodeIndex] = concat(temps, totalCapacity);
-          // ByteBuffer[] result = new ByteBuffer[inputs.length + receivedByteBuffers.length];
-          // System.arraycopy(inputs, 0, result, 0, inputs.length);
-          // System.arraycopy(receivedByteBuffers, 0, result, inputs.length, receivedByteBuffers.length);
         }
         receivedByteBuffers[nodeIndex].position(
           originalPosition + (toReconstructLen * bandwidth[nodeIndex] / 8));
