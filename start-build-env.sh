@@ -88,10 +88,19 @@ DOCKER_INTERACTIVE_RUN=${DOCKER_INTERACTIVE_RUN-"-i -t"}
 # within the container and use the result on your normal
 # system.  And this also is a significant speedup in subsequent
 # builds because the dependencies are downloaded only once.
+#docker run --rm=true $DOCKER_INTERACTIVE_RUN \
+#  -v "${PWD}:${DOCKER_HOME_DIR}/hadoop${V_OPTS:-}" \
+#  -w "${DOCKER_HOME_DIR}/hadoop" \
+#  -v "${HOME}/.m2:${DOCKER_HOME_DIR}/.m2${V_OPTS:-}" \
+#  -v "${HOME}/.gnupg:${DOCKER_HOME_DIR}/.gnupg${V_OPTS:-}" \
+#  -u "${USER_ID}" \
+#  -p 5005:5005 \
+#  "hadoop-build-${USER_ID}" "$@"
+
 docker run --rm=true $DOCKER_INTERACTIVE_RUN \
   -v "${PWD}:${DOCKER_HOME_DIR}/hadoop${V_OPTS:-}" \
   -w "${DOCKER_HOME_DIR}/hadoop" \
-  -v "${HOME}/.m2:${DOCKER_HOME_DIR}/.m2${V_OPTS:-}" \
+  -v "/home/kinda_raffy/.m2:/home/kinda_raffy/.m2" \
   -v "${HOME}/.gnupg:${DOCKER_HOME_DIR}/.gnupg${V_OPTS:-}" \
   -u "${USER_ID}" \
   -p 5005:5005 \

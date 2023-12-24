@@ -23,10 +23,13 @@ import org.apache.hadoop.hdfs.server.datanode.metrics.DataNodeMetrics;
 import org.apache.hadoop.io.erasurecode.coder.util.tracerepair.RecoveryTable;
 import org.apache.hadoop.io.erasurecode.rawcoder.InvalidDecodingException;
 import org.apache.hadoop.util.Time;
+import org.apache.hadoop.util.DumpLog;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * StripedBlockReconstructor reconstruct one or more missed striped block in
@@ -43,6 +46,7 @@ class StripedBlockReconstructor extends StripedReconstructor
   private StripedWriter stripedWriter;
 
   private ReconstructTargetInputs reconstructTargetInputs;
+  private static final DumpLog dumpLogger = DumpLog.getInstance();
 
   StripedBlockReconstructor(ErasureCodingWorker worker,
                             StripedReconstructionInfo stripedReconInfo) {
@@ -92,7 +96,7 @@ class StripedBlockReconstructor extends StripedReconstructor
   void reconstruct() throws IOException {
     int erasedNodeIndex = getStripedReader().getErasedIndex();
     reconstructTargetInputs =
-        new ReconstructTargetInputs(nodeCount, getMaxTargetLength(), erasedNodeIndex, recoveryTable);
+            new ReconstructTargetInputs(nodeCount, getMaxTargetLength(), erasedNodeIndex, recoveryTable);
     while (getPositionInBlock() < getMaxTargetLength()) {
       DataNodeFaultInjector.get().stripedBlockReconstruction();
       long remaining = getMaxTargetLength() - getPositionInBlock();
@@ -181,11 +185,38 @@ class StripedBlockReconstructor extends StripedReconstructor
   ByteBuffer[] correct = null;
   ByteBuffer[] current = null;
 
+  boolean debug_print = false;
   private void reconstructTargets(int toReconstructLen) throws IOException {
     ByteBuffer[] inputs = getStripedReader().getInputBuffers(toReconstructLen);
     reconstructTargetInputs.appendInputs(inputs, toReconstructLen);
     ByteBuffer[] decoderInputs = reconstructTargetInputs.getInputs();
 
+    int[] totalCount78 = Arrays.stream(reconstructTargetInputs.totalInputs).mapToInt(buffer -> {
+      if (buffer == null) {
+        return 0;
+      }
+      int count = 0;
+      for (byte b : buffer) {
+        if (b == 78) {
+          count++;
+        }
+      }
+      return count;
+    }).toArray();
+    int[] currentCount78 = Arrays.stream(decoderInputs).mapToInt(buffer -> {
+      if (buffer == null) {
+        return 0;
+      }
+      int count = 0;
+      for (byte b : buffer.array()) {
+        if (b == 78) {
+          count++;
+        }
+      }
+      return count;
+    }).toArray();
+    String[] totalSummary = debugArray(reconstructTargetInputs.totalInputs);
+    String[] currentSummary = debugArray(decoderInputs);
     int[] erasedIndices = stripedWriter.getRealTargetIndices();
     ByteBuffer[] outputs = stripedWriter.getRealTargetBuffers(toReconstructLen);
 
@@ -198,10 +229,14 @@ class StripedBlockReconstructor extends StripedReconstructor
       if (correct[i] == null) {
         continue;
       }
+      /*if (i == 3 && debug_print) {
+        dumpLogger.write(this, "correct", "correct[" + i + "]: " + Arrays.toString(correct[i].array()));
+        dumpLogger.write(this, "incorrect", "incorrect[" + i + "]: " + Arrays.toString(current[i].array()));
+      }*/
       boolean same = Arrays.equals(correct[i].array(), current[i].array());
       System.out.println(same);
     }
-
+    debug_print = true;
     if (isValidationEnabled()) {
       markBuffers(inputs);
       decode(decoderInputs, erasedIndices, outputs);
@@ -282,16 +317,18 @@ class StripedBlockReconstructor extends StripedReconstructor
     int nodeCount;
     int erasedNodeIndex;
     RecoveryTable recoveryTable;
-    int[] bufferPointers;
+    int[] bufferReadPointers;
+    int[] writeLengths;
     byte[][] totalInputs;
 
     ReconstructTargetInputs(int nodeCount, long maxTargetLength, int erasedNodeIndex, RecoveryTable recoveryTable) {
       this.inputs = new ByteBuffer[nodeCount];
       this.totalInputs = new byte[nodeCount][(int) maxTargetLength];
+      this.writeLengths = new int[nodeCount];
       this.nodeCount = nodeCount;
       this.erasedNodeIndex = erasedNodeIndex;
       this.recoveryTable = recoveryTable;
-      this.bufferPointers = new int[nodeCount];
+      this.bufferReadPointers = new int[nodeCount];
       this.bandwidth = new byte[nodeCount];
       for (int nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++) {
         bandwidth[nodeIndex] = recoveryTable.getByte_9_6(nodeIndex, erasedNodeIndex, 0);
@@ -323,27 +360,52 @@ class StripedBlockReconstructor extends StripedReconstructor
       assert inputs.length == receivedByteBuffers.length;
 
       // [DEBUG]
-      if (correct == null) {
+      /*if (correct == null) {
         correct = receivedByteBuffers;
       }
       for (int i = 0; i < receivedByteBuffers.length; i++) {
         if (receivedByteBuffers[i] == null) {
           continue;
         }
-        boolean same = Arrays.equals(correct[i].array(), receivedByteBuffers[i].array());
-        System.out.println(same);
+        byte[] received = new byte[receivedByteBuffers[i].capacity()];
+        receivedByteBuffers[i].rewind();
+        receivedByteBuffers[i].get(received, 0, received.length);
+        receivedByteBuffers[i].rewind();
+        byte[] initial = new byte[correct[i].capacity()];
+        correct[i].rewind();
+        correct[i].get(initial, 0, initial.length);
+        correct[i].rewind();
+        boolean same = Arrays.equals(initial, received);
         assert same;
-      }
+      }*/
+
+      // [DEBUG] Verify if the first iteration traces are the same as the next iteration traces.
+      /*if (toReconstructLen == 32768) {
+        for (int i = 0; i < receivedByteBuffers.length; i++) {
+          if (receivedByteBuffers[i] == null) {
+            continue;
+          }
+          int traceSize = 32768 * bandwidth[i] / 8;
+          byte[] first = new byte[traceSize];
+          receivedByteBuffers[i].get(first, 0, traceSize);
+          receivedByteBuffers[i].position(traceSize);
+          byte[] second = new byte[traceSize];
+          receivedByteBuffers[i].get(second, 0, traceSize);
+          boolean same = Arrays.equals(first, second);
+          System.out.println(same);
+        }
+      }*/
 
 
       for (int nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++) {
         if (nodeIndex == erasedNodeIndex) { continue; }
         assert receivedByteBuffers[nodeIndex] != null;
-        int originalPosition = receivedByteBuffers[nodeIndex].position();
-
-        receivedByteBuffers[nodeIndex].get(totalInputs[nodeIndex], bufferPointers[nodeIndex], toReconstructLen);
-
-        /*if (inputs[nodeIndex] == null) {
+        receivedByteBuffers[nodeIndex].rewind();
+        int nodeBufferLength = receivedByteBuffers[nodeIndex].capacity();
+        receivedByteBuffers[nodeIndex].get(totalInputs[nodeIndex], writeLengths[nodeIndex], nodeBufferLength);
+        writeLengths[nodeIndex] += nodeBufferLength;
+        /*int originalPosition = receivedByteBuffers[nodeIndex].position();
+        if (inputs[nodeIndex] == null) {
           inputs[nodeIndex] = clone(receivedByteBuffers[nodeIndex]);
         } else {
           ByteBuffer[] temps = new ByteBuffer[]{inputs[nodeIndex], receivedByteBuffers[nodeIndex]};
@@ -359,12 +421,12 @@ class StripedBlockReconstructor extends StripedReconstructor
       ByteBuffer[] decoderInputs = new ByteBuffer[nodeCount];
       for (int nodeIndex = 0; nodeIndex < inputs.length; nodeIndex++) {
         if (nodeIndex == erasedNodeIndex) { continue; }
-        int bandwidth = recoveryTable.getByte_9_6(nodeIndex, erasedNodeIndex, 0);
-        int inputLimit = 32768 * bandwidth / 8;
+        int inputLimit = 32768 * bandwidth[nodeIndex] / 8;
 
         byte[] trimmedInput = new byte[inputLimit];
-        System.arraycopy(totalInputs[nodeIndex], bufferPointers[nodeIndex], trimmedInput, 0, inputLimit);
+        System.arraycopy(totalInputs[nodeIndex], bufferReadPointers[nodeIndex], trimmedInput, 0, inputLimit);
         decoderInputs[nodeIndex] = ByteBuffer.wrap(trimmedInput);
+        bufferReadPointers[nodeIndex] = bufferReadPointers[nodeIndex] + inputLimit;
         /*byte[] trimmedInput = new byte[inputLimit];
         // inputs[nodeIndex].position(bufferPointers[nodeIndex]);
         inputs[nodeIndex].rewind();
@@ -375,11 +437,10 @@ class StripedBlockReconstructor extends StripedReconstructor
     }
 
     void forwardInputs() {
-      for (int nodeIndex = 0; nodeIndex < inputs.length; nodeIndex++) {
+      /*for (int nodeIndex = 0; nodeIndex < inputs.length; nodeIndex++) {
         if (nodeIndex == erasedNodeIndex) { continue; }
-        int bandwidth = recoveryTable.getByte_9_6(nodeIndex, erasedNodeIndex, 0);
-        bufferPointers[nodeIndex] = bufferPointers[nodeIndex] + 32768 * bandwidth / 8;
-      }
+        bufferPointers[nodeIndex] = bufferPointers[nodeIndex] + 32768 * bandwidth[nodeIndex] / 8;
+      }*/
       /*for (int nodeIndex = 0; nodeIndex < inputs.length; nodeIndex++) {
         if (nodeIndex == erasedNodeIndex) { continue; }
         ByteBuffer nodeBuffer = inputs[nodeIndex];
@@ -388,6 +449,57 @@ class StripedBlockReconstructor extends StripedReconstructor
         int readAlready = nodeBuffer.position() + (inputs[nodeIndex].capacity() * nodeBandwidth / 8);
         nodeBuffer.position(readAlready);
       }*/
+    }
+  }
+
+  public static String[] debugArray(ByteBuffer[] buffers) {
+    String[] results = new String[buffers.length];
+    for (int i = 0; i < buffers.length; i++) {
+      results[i] = buffers[i] == null ? "" : debugArray(buffers[i].array());
+    }
+    return results;
+  }
+
+  public static String[] debugArray(byte[][] buffers) {
+    String[] results = new String[buffers.length];
+    for (int i = 0; i < buffers.length; i++) {
+      results[i] = buffers[i] == null ? "" : debugArray(buffers[i]);
+    }
+    return results;
+  }
+
+  private static String debugArray(byte[] arr) {
+    if (arr == null || arr.length == 0) {
+      return "";
+    }
+
+    List<String> result = new ArrayList<>();
+    byte currentValue = arr[0];
+    int count = 1;
+    int startIndex = 0;
+
+    for (int i = 1; i < arr.length; i++) {
+      if (arr[i] == currentValue) {
+        count++;
+      } else {
+        appendResult(result, currentValue, count, startIndex, i - 1);
+        currentValue = arr[i];
+        count = 1;
+        startIndex = i;
+      }
+    }
+    appendResult(result, currentValue, count, startIndex, arr.length - 1);
+
+    return String.join(", ", result);
+  }
+
+  private static void appendResult(List<String> result, byte value, int count, int start, int end) {
+    if (count < 5) {
+      for (int i = 0; i < count; i++) {
+        result.add(Byte.toString(value));
+      }
+    } else {
+      result.add(value + " (" + count + " elements; " + start + ":" + end + ")");
     }
   }
 }

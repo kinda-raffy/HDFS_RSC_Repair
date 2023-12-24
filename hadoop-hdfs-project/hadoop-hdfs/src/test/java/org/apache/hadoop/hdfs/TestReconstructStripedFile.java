@@ -399,7 +399,8 @@ public class TestReconstructStripedFile {
   private static void writeFile(DistributedFileSystem fs, String fileName,
                                 int fileLen) throws Exception {
     final byte[] data = new byte[fileLen];
-    Arrays.fill(data, (byte) 78);
+    // Arrays.fill(data, (byte) 78);
+    new Random().nextBytes(data);
     DFSTestUtil.writeFile(fs, new Path(fileName), data);
     StripedFileTestUtil.waitBlockGroupsReported(fs, fileName);
   }

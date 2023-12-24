@@ -101,5 +101,7 @@ RUN chmod 755 /root/hadoop_env_checks.sh
 # hadolint ignore=SC2016
 RUN echo '${HOME}/hadoop_env_checks.sh' >> /root/.bashrc
 
+RUN apt-get update && apt-get install -y neovim ranger htop lsof
+
 COPY debug.bashrc /root/debug.bashrc
 RUN cat /root/debug.bashrc >> /root/.bashrc

@@ -594,6 +594,33 @@ class BlockTraceSender implements java.io.Closeable {
         byte[] encoderOutput = new byte[(int) Math.ceil((double) nodeTrace.length / 8)];
         compressTrace(nodeTrace, encoderOutput);
 
+        // [DEBUG]
+        // Start of the trace: -256 to 0.
+        // First quarter of the trace: 1.
+        // Second quarter of the trace: 2.
+        // Third quarter of the trace: 3.
+        // Fourth quarter of the trace: 4.
+        /*int middleOffset = 0;
+        int quarterLength = encoderOutput.length / 4;
+        for (int i = 0; i < encoderOutput.length; i++) {
+            if (i < 10) {
+                encoderOutput[i] = (byte) (-10 + i);
+            } else if (i < quarterLength ) {
+                encoderOutput[i] = 1;
+            } else if (i < 2 * quarterLength) {
+                if (middleOffset < 5) {
+                    encoderOutput[i] = 78;
+                    middleOffset++;
+                } else {
+                    encoderOutput[i] = 2;
+                }
+            } else if (i < 3 * quarterLength) {
+                encoderOutput[i] = 3;
+            } else {
+                encoderOutput[i] = 4;
+            }
+        }*/
+
         int packetLength = encoderOutput.length + 33; // 33 is the header length, so 34 is the position
         packetBuffer = ByteBuffer.allocate(packetLength);
         int headerLength = writePacketHeader(packetBuffer, encoderOutput.length, packetLength);
