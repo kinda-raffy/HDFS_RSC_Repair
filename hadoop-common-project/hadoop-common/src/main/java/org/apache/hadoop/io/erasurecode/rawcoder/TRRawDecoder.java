@@ -19,9 +19,11 @@ package org.apache.hadoop.io.erasurecode.rawcoder;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.io.erasurecode.ErasureCoderOptions;
+import org.apache.hadoop.util.MetricTimer;
 import org.apache.hadoop.util.OurECLogger;
 import org.apache.hadoop.io.erasurecode.coder.util.tracerepair.RecoveryTable;
 import org.apache.hadoop.io.erasurecode.coder.util.tracerepair.DualBasisTable;
+import org.apache.hadoop.util.TimerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -33,7 +35,6 @@ import java.nio.ByteBuffer;
 
 @InterfaceAudience.Private
 public class TRRawDecoder extends RawErasureDecoder {
-    private static OurECLogger ourlog = OurECLogger.getInstance();
     public TRRawDecoder(ErasureCoderOptions coderOptions) {
         super(coderOptions);
         preCompute();
@@ -77,7 +78,6 @@ public class TRRawDecoder extends RawErasureDecoder {
             if (inputs[i] != null) {
                 // dataLen bytes consumed
                 inputs[i].position(inputPositions[i] + (int) Math.ceil(dataLen * bw[i] / 8.0));
-                // inputs[i].position(inputPositions[i] + dataLen);
             }
         }
     }
@@ -91,38 +91,50 @@ public class TRRawDecoder extends RawErasureDecoder {
 
     @Override
     protected void doDecode(ByteArrayDecodingState decodingState) {
+        MetricTimer reconstructionTimer = TimerFactory.getTimer("Recovery_Reconstruct");
+        reconstructionTimer.start();
         CoderUtil.resetOutputBuffers(
             decodingState.outputs,
             decodingState.outputOffsets,
             decodingState.decodeLength
         );
+        reconstructionTimer.stop("Reset output buffers");
         // [FIXME] This should be done over every erased node.
         int erasedIdx = decodingState.erasedIndexes[0];
         int n = decodingState.decoder.getNumAllUnits();
 
         // [WARN] We assume only one node fails.
-        // int traceCount = n - decodingState.erasedIndexes.length;  // [FIXME] Erased trace is null. Used as the conditional in the decompress loop and the outer length of binaryTraces.
         byte[][] binaryTraces = new byte[n][];
+        reconstructionTimer.start();
         // [NOTE] Calculate bandwidth.
         for (int i = 0; i < n; i++) {
             bw[i] = recoveryTable.getByte_9_6(i, erasedIdx, 0);
         }
+        reconstructionTimer.stop("Calculate bandwidth");
+        reconstructionTimer.start();
         // [NOTE] Decompress traces into its binary format.
         //        The erased trace is not sent over.
         for (int i = 0; i < n; i++) {
             if (i == erasedIdx) { continue; }
-            // int activeNodeIndex = erasedIdx <= i ? i + 1 : i;  // [FIXME] Erased trace is null.
             binaryTraces[i] = decompressTrace(
                 decodingState.inputs[i], decodingState.inputOffsets[i],
                 bw[i] * decodingState.decodeLength);
         }
+        reconstructionTimer.stop("Decompress traces");
+
+        // MetricTimer reconstructionTimer = TimerFactory.getTimer("Recovery_Reconstruct");
+        reconstructionTimer.start();
         byte[] decimalTrace = convertToDecimalTrace(
             binaryTraces, erasedIdx, decodingState.decodeLength, n);
+        reconstructionTimer.stop("Convert to decimal trace");
+        reconstructionTimer.start();
         byte[] revMem = repairDecimalTrace(n, erasedIdx);
+        reconstructionTimer.stop("Repair decimal trace");
+        reconstructionTimer.start();
         constructCj(
             n, erasedIdx, decodingState.decodeLength, decimalTrace,
             revMem, decodingState.outputs[0], decodingState.outputOffsets[0]);  // [WARN] We assume only one node fails.
-        System.out.println(1);
+        reconstructionTimer.stop("Construct Cj");
     }
 
     public static byte[] decompressTrace(byte[] compressedTrace, int inputOffset, int numBitsToRead) {
@@ -191,34 +203,18 @@ public class TRRawDecoder extends RawErasureDecoder {
         byte[] output,
         int outputOffset
     ) {
-        // [FIXME] Adapt to use a ByteBuffer instead.
-        /*byte[][] debugTrace = {
-            { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
-            { 45, 45, 45, 45, 45, 45, 45, 45, 45, 45 },
-            { 9, 9, 9, 9, 9, 9, 9, 9, 9, 9 },
-            { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
-            { 26, 26, 26, 26, 26, 26, 26, 26, 26, 26 },
-            { 44, 44, 44, 44, 44, 44, 44, 44, 44, 44 },
-            { 10, 10, 10, 10, 10, 10, 10, 10, 10, 10 },
-            { 11, 11, 11, 11, 11, 11, 11, 11, 11, 11 },
-        };*/
-
-        byte[] rev = new byte[decodeLength];
         // [NOTE] Traces (inputs) should not involve any erased nodes.
         for (int i = 0; i < n; i++) {
             // [NOTE] The traces should not include the erased nodes.
             if (i == erasedIdx) { continue; }
             for (int test_codeword = 0; test_codeword < decodeLength; test_codeword++) {
                 // [TODO] Handle multi-node failures.
-                // int dataNodeIndex = erasedIdx <= i ? i + 1 : i;  // [FIXME] Erased trace is null.
                 int traceIndex = i * decodeLength + test_codeword;
                 byte traces_as_number = decimalTrace[traceIndex];
-                // byte traces_as_number = decimalTrace[i][test_codeword];
                 output[outputOffset + test_codeword]
                     = (byte) (output[outputOffset + test_codeword] ^ revMem[(i << 8) + traces_as_number]);;
             }
         }
-        // return rev;
     }
 
     private void preCompute() {

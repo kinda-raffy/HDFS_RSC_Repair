@@ -45,6 +45,8 @@ import java.util.stream.IntStream;
 import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.server.datanode.erasurecode.ErasureCodingTestHelper;
 import org.apache.hadoop.io.ElasticByteBufferPool;
+import org.apache.hadoop.util.MetricTimer;
+import org.apache.hadoop.util.TimerFactory;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
@@ -400,9 +402,16 @@ public class TestReconstructStripedFile {
                                 int fileLen) throws Exception {
     final byte[] data = new byte[fileLen];
     // Arrays.fill(data, (byte) 78);
+    MetricTimer fileCreationTimer = TimerFactory.getTimer("File_Generation");
+    fileCreationTimer.start();
     new Random().nextBytes(data);
+    fileCreationTimer.stop("Generate random bytes");
+    fileCreationTimer.start();
     DFSTestUtil.writeFile(fs, new Path(fileName), data);
+    fileCreationTimer.stop("Divide + calculate parity blocks and enqueue send data jobs to data-nodes");
+    fileCreationTimer.start();
     StripedFileTestUtil.waitBlockGroupsReported(fs, fileName);
+    fileCreationTimer.stop("Wait for all data-nodes to receive their blocks");
   }
 
   @Test(timeout = 1200000)
@@ -419,8 +428,11 @@ public class TestReconstructStripedFile {
     ourTestLogger = OurTestLogger.getInstance(testCaseName);
     assertFileBlocksReconstructionTraceRepair("/testRecoverOneDataBlock", fileLen,
             ReconstructionType.DataOnly, 1);
+    // assertFileBlocksReconstruction("/testRecoverOneDataBlock", fileLen,
+    //         ReconstructionType.DataOnly, 1);
     // [TODO] Write test code to read the content from the test file and assert
     assertResults(1);
+    TimerFactory.closeAll();
   }
 
   /**
@@ -669,9 +681,6 @@ public class TestReconstructStripedFile {
         byte[] subArrayAfterReplicaContent = Arrays.copyOfRange(replicaContentAfterReconstruction, 0, 60);
         ourECLogger.write(this, "after reconstruction: " + Arrays.toString(subArrayAfterReplicaContent));
       }
-      int[] indexes = IntStream.range(0, replicaContentAfterReconstruction.length)
-              .filter(j -> replicaContentAfterReconstruction[j] == 78)
-              .toArray();
       Assert.assertArrayEquals(replicaContents[i], replicaContentAfterReconstruction);
     }
   }

@@ -8,7 +8,7 @@ import java.util.Date;
 public class OurECLogger {
 
     private static OurECLogger instance;
-    private String logFilePath = "OurECLog-TestCaseName.log";
+    private String logFilePath = "ECLog/OurECLog-TestCaseName.log";
 
 
     // added to avoid all the messages from hadoop internal classes

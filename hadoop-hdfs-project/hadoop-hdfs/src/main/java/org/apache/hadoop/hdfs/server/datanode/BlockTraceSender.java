@@ -49,8 +49,7 @@ import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.io.ReadaheadPool.ReadaheadRequest;
 import org.apache.hadoop.io.erasurecode.coder.util.tracerepair.HelperTable;
 import org.apache.hadoop.net.SocketOutputStream;
-import org.apache.hadoop.util.AutoCloseableLock;
-import org.apache.hadoop.util.DataChecksum;
+import org.apache.hadoop.util.*;
 import org.apache.hadoop.tracing.TraceScope;
 
 
@@ -58,10 +57,7 @@ import static org.apache.hadoop.io.nativeio.NativeIO.POSIX.POSIX_FADV_DONTNEED;
 import static org.apache.hadoop.io.nativeio.NativeIO.POSIX.POSIX_FADV_SEQUENTIAL;
 
 import org.apache.hadoop.classification.VisibleForTesting;
-import org.apache.hadoop.util.Preconditions;
 import org.slf4j.Logger;
-import org.apache.hadoop.util.OurECLogger;
-import org.apache.hadoop.util.OurTestLogger;
 
 /** [NOTE]
  * 1. File put to Hadoop
@@ -589,37 +585,13 @@ class BlockTraceSender implements java.io.Closeable {
         // encoderOutput <= 16 depends on bw
 
         byte[] encoderInput = new byte[dataLen];
+        MetricTimer diskOperationTimer = TimerFactory.getTimer("Disk_Operations");
+        diskOperationTimer.start();
         replicaInputStreams.readDataFully(encoderInput, 0, dataLen);
+        diskOperationTimer.stop("Read data at helper-node before computing traces");
         byte[] nodeTrace = repairTraceGeneration(helperNodeIndex, lostNodeIndex, encoderInput, dataLen);
         byte[] encoderOutput = new byte[(int) Math.ceil((double) nodeTrace.length / 8)];
         compressTrace(nodeTrace, encoderOutput);
-
-        // [DEBUG]
-        // Start of the trace: -256 to 0.
-        // First quarter of the trace: 1.
-        // Second quarter of the trace: 2.
-        // Third quarter of the trace: 3.
-        // Fourth quarter of the trace: 4.
-        /*int middleOffset = 0;
-        int quarterLength = encoderOutput.length / 4;
-        for (int i = 0; i < encoderOutput.length; i++) {
-            if (i < 10) {
-                encoderOutput[i] = (byte) (-10 + i);
-            } else if (i < quarterLength ) {
-                encoderOutput[i] = 1;
-            } else if (i < 2 * quarterLength) {
-                if (middleOffset < 5) {
-                    encoderOutput[i] = 78;
-                    middleOffset++;
-                } else {
-                    encoderOutput[i] = 2;
-                }
-            } else if (i < 3 * quarterLength) {
-                encoderOutput[i] = 3;
-            } else {
-                encoderOutput[i] = 4;
-            }
-        }*/
 
         int packetLength = encoderOutput.length + 33; // 33 is the header length, so 34 is the position
         packetBuffer = ByteBuffer.allocate(packetLength);
@@ -681,11 +653,10 @@ class BlockTraceSender implements java.io.Closeable {
         return new int[]{dataLen, encoderOutput.length};
     }
 
-    @SuppressWarnings("DuplicatedCode")
     protected byte[] repairTraceGeneration(
             int nodeIndex, int erasedNodeIndex,
             byte[] inputs, int encodeLength
-    ) {
+    ) throws IOException {
         assert(nodeIndex != erasedNodeIndex);
         byte bw = helperTable.getByte_9_6(nodeIndex, erasedNodeIndex, 0);
         byte[] repairTrace = new byte[bw * encodeLength];
@@ -693,6 +664,8 @@ class BlockTraceSender implements java.io.Closeable {
         byte[] Hij = new byte[H.length - 1];
         System.arraycopy(H, 1, Hij, 0, Hij.length);
         int idx = 0;
+        MetricTimer helperTraceTimer = TimerFactory.getTimer("Helper_Trace_Computation");
+        helperTraceTimer.start();
         for (int a = 0; a < bw; a++) {
             for (int testCodeWord = 0; testCodeWord < encodeLength; testCodeWord++) {
                 byte parityCalculation = (byte) (Hij[a] & (inputs[testCodeWord]));
@@ -700,6 +673,7 @@ class BlockTraceSender implements java.io.Closeable {
                 repairTrace[idx++] = preComputedParity[parityIndex];
             }
         }
+        helperTraceTimer.stop("Compute helper-node traces");
         return repairTrace;
     }
 

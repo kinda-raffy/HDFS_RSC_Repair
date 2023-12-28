@@ -18,7 +18,7 @@
 package org.apache.hadoop.hdfs;
 
 import org.apache.hadoop.classification.VisibleForTesting;
-import org.apache.hadoop.util.Preconditions;
+import org.apache.hadoop.util.*;
 import org.apache.hadoop.HadoopIllegalArgumentException;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.fs.CreateFlag;
@@ -42,9 +42,6 @@ import org.apache.hadoop.io.MultipleIOException;
 import org.apache.hadoop.io.erasurecode.CodecUtil;
 import org.apache.hadoop.io.erasurecode.ErasureCoderOptions;
 import org.apache.hadoop.io.erasurecode.rawcoder.RawErasureEncoder;
-import org.apache.hadoop.util.DataChecksum;
-import org.apache.hadoop.util.Progressable;
-import org.apache.hadoop.util.Time;
 import org.apache.hadoop.tracing.TraceScope;
 
 import java.io.IOException;
@@ -561,6 +558,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
       allocateNewBlock();
     }
 
+    MetricTimer fileCreationTimer = TimerFactory.getTimer("File_Generation");
     currentBlockGroup.setNumBytes(currentBlockGroup.getNumBytes() + len);
     // note: the current streamer can be refreshed after allocating a new block
     final StripedDataStreamer current = getCurrentStreamer();
@@ -577,12 +575,15 @@ public class DFSStripedOutputStream extends DFSOutputStream
     // 2. Generate parity packets if a full stripe of data cells are present
     if (cellFull) {
       int next = index + 1;
+      fileCreationTimer.start();
       //When all data cells in a stripe are ready, we need to encode
       //them and generate some parity cells. These cells will be
       //converted to packets and put to their DataStreamer's queue.
       if (next == numDataBlocks) {
         cellBuffers.flipDataBuffers();
+        fileCreationTimer.start();
         writeParityCells();
+        fileCreationTimer.stop("Perform parity calculation");
         next = 0;
 
         // if this is the end of the block group, end each internal block
@@ -602,6 +603,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
           checkStreamerFailures(true);
         }
       }
+      fileCreationTimer.stop("Write a full stripe");
       setCurrentStreamer(next);
     }
   }
@@ -1136,10 +1138,16 @@ public class DFSStripedOutputStream extends DFSOutputStream
     if (!checkAnyParityStreamerIsHealthy()) {
       return;
     }
+    MetricTimer fileCreationTimer = TimerFactory.getTimer("File_Generation");
+    MetricTimer encodingTimer = TimerFactory.getTimer("Parity_Encoding");
     //encode the data cells
+    encodingTimer.start();
     encode(encoder, numDataBlocks, buffers);
+    encodingTimer.stop("Encode all data cells (entire stripe)");
     for (int i = numDataBlocks; i < numAllBlocks; i++) {
+      fileCreationTimer.start();
       writeParity(i, buffers[i], cellBuffers.getChecksumArray(i));
+      fileCreationTimer.stop("Write a single parity");
     }
     cellBuffers.clear();
   }
@@ -1233,9 +1241,14 @@ public class DFSStripedOutputStream extends DFSOutputStream
         // flush from all upper layers
         flushBuffer();
         // if the last stripe is incomplete, generate and write parity cells
+        MetricTimer fileCreationTimer = TimerFactory.getTimer("File_Generation");
+        fileCreationTimer.start();
         if (generateParityCellsForLastStripe()) {
           writeParityCells();
         }
+        fileCreationTimer.stop("Perform parity calculation for last stripe");
+
+        fileCreationTimer.start();
         enqueueAllCurrentPackets();
 
         // flush all the data packets
@@ -1260,6 +1273,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
             }
           }
         }
+        fileCreationTimer.stop("Enqueue send data jobs to data-nodes");
       } finally {
         // Failures may happen when flushing data/parity data out. Exceptions
         // may be thrown if the number of failed streamers is more than the
