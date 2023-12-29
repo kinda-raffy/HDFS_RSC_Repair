@@ -1,0 +1,67 @@
+--------------------------------------------------
+Recovery_Reconstruct's Operation Summary
+--------------------------------------------------
+
+Generate decode matrix
+	Occurrence: 8
+	Sum: 447498.00 ns (0.000447 s)
+	Avg: 55937.25 ns (0.000056 s)
+	Min: 6633 ns (0.000007 s)
+	Max: 127308 ns (0.000127 s)
+
+Decode chunk from sources
+	Occurrence: 30
+	Sum: 347249821.00 ns (0.347250 s)
+	Avg: 11574994.03 ns (0.011575 s)
+	Min: 336568 ns (0.000337 s)
+	Max: 76908173 ns (0.076908 s)
+
+Process erasures
+	Occurrence: 8
+	Sum: 3267710.00 ns (0.003268 s)
+	Avg: 408463.75 ns (0.000408 s)
+	Min: 180507 ns (0.000181 s)
+	Max: 823998 ns (0.000824 s)
+
+Init RS tables
+	Occurrence: 8
+	Sum: 1341946.00 ns (0.001342 s)
+	Avg: 167743.25 ns (0.000168 s)
+	Min: 7745 ns (0.000008 s)
+	Max: 715636 ns (0.000716 s)
+
+Perform reconstruct operation
+	Occurrence: 8
+	Sum: 367676803.00 ns (0.367677 s)
+	Avg: 45959600.38 ns (0.045960 s)
+	Min: 12619472 ns (0.012619 s)
+	Max: 81159942 ns (0.081160 s)
+
+Decode chunk
+	Occurrence: 30
+	Sum: 231435054.00 ns (0.231435 s)
+	Avg: 7714501.80 ns (0.007715 s)
+	Min: 274272 ns (0.000274 s)
+	Max: 18672954 ns (0.018673 s)
+
+Prepare for decoding
+	Occurrence: 30
+	Sum: 8151487.00 ns (0.008151 s)
+	Avg: 271716.23 ns (0.000272 s)
+	Min: 9417 ns (0.000009 s)
+	Max: 4073666 ns (0.004074 s)
+
+Reset output buffers
+	Occurrence: 30
+	Sum: 3348162.00 ns (0.003348 s)
+	Avg: 111605.40 ns (0.000112 s)
+	Min: 6533 ns (0.000007 s)
+	Max: 208550 ns (0.000209 s)
+
+Perform decoding
+	Occurrence: 30
+	Sum: 215433402.00 ns (0.215433 s)
+	Avg: 7181113.40 ns (0.007181 s)
+	Min: 11652 ns (0.000012 s)
+	Max: 18442944 ns (0.018443 s)
+

@@ -23,6 +23,8 @@ import org.apache.hadoop.io.erasurecode.ErasureCoderOptions;
 import org.apache.hadoop.io.erasurecode.rawcoder.util.DumpUtil;
 import org.apache.hadoop.io.erasurecode.rawcoder.util.GF256;
 import org.apache.hadoop.io.erasurecode.rawcoder.util.RSUtil;
+import org.apache.hadoop.util.MetricTimer;
+import org.apache.hadoop.util.TimerFactory;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -86,9 +88,16 @@ public class RSRawDecoder extends RawErasureDecoder {
   @Override
   protected void doDecode(ByteArrayDecodingState decodingState) {
     int dataLen = decodingState.decodeLength;
+    MetricTimer reconstructionTimer = TimerFactory.getTimer("Recovery_Reconstruct");
+    reconstructionTimer.start();
     CoderUtil.resetOutputBuffers(decodingState.outputs,
         decodingState.outputOffsets, dataLen);
+    reconstructionTimer.stop("Reset output buffers");
+
+    reconstructionTimer.start();
     prepareDecoding(decodingState.inputs, decodingState.erasedIndexes);
+    reconstructionTimer.stop("Prepare for decoding");
+
 
     byte[][] realInputs = new byte[getNumDataUnits()][];
     int[] realInputOffsets = new int[getNumDataUnits()];
@@ -96,8 +105,11 @@ public class RSRawDecoder extends RawErasureDecoder {
       realInputs[i] = decodingState.inputs[validIndexes[i]];
       realInputOffsets[i] = decodingState.inputOffsets[validIndexes[i]];
     }
+
+    reconstructionTimer.start();
     RSUtil.encodeData(gfTables, dataLen, realInputs, realInputOffsets,
         decodingState.outputs, decodingState.outputOffsets);
+    reconstructionTimer.stop("Perform decoding");
   }
 
   private <T> void prepareDecoding(T[] inputs, int[] erasedIndexes) {
@@ -111,7 +123,10 @@ public class RSRawDecoder extends RawErasureDecoder {
     this.validIndexes =
             Arrays.copyOf(tmpValidIndexes, tmpValidIndexes.length);
 
+    MetricTimer reconstructionTimer = TimerFactory.getTimer("Recovery_Reconstruct");
+    reconstructionTimer.start();
     processErasures(erasedIndexes);
+    reconstructionTimer.stop("Process erasures");
   }
 
   private void processErasures(int[] erasedIndexes) {
@@ -130,10 +145,15 @@ public class RSRawDecoder extends RawErasureDecoder {
       }
     }
 
+    MetricTimer reconstructionTimer = TimerFactory.getTimer("Recovery_Reconstruct");
+    reconstructionTimer.start();
     generateDecodeMatrix(erasedIndexes);
+    reconstructionTimer.stop("Generate decode matrix");
 
+    reconstructionTimer.start();
     RSUtil.initTables(getNumDataUnits(), erasedIndexes.length,
         decodeMatrix, 0, gfTables);
+    reconstructionTimer.stop("Init RS tables");
     if (allowVerboseDump()) {
       System.out.println(DumpUtil.bytesToHex(gfTables, -1));
     }

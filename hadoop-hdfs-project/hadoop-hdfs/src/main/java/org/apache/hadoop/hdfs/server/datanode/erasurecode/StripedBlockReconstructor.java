@@ -24,7 +24,9 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.hdfs.server.datanode.DataNodeFaultInjector;
 import org.apache.hadoop.hdfs.server.datanode.metrics.DataNodeMetrics;
 import org.apache.hadoop.io.erasurecode.rawcoder.InvalidDecodingException;
+import org.apache.hadoop.util.MetricTimer;
 import org.apache.hadoop.util.Time;
+import org.apache.hadoop.util.TimerFactory;
 
 /**
  * StripedBlockReconstructor reconstruct one or more missed striped block in
@@ -60,7 +62,10 @@ class StripedBlockReconstructor extends StripedReconstructor
 
       stripedWriter.init();
 
+      MetricTimer reconstructionTimer = TimerFactory.getTimer("Recovery_Reconstruct");
+      reconstructionTimer.start();
       reconstruct();
+      reconstructionTimer.stop("Perform reconstruct operation");
 
       stripedWriter.endTargetBlocks();
 
@@ -104,8 +109,11 @@ class StripedBlockReconstructor extends StripedReconstructor
       getStripedReader().readMinimumSources(toReconstructLen);
       long readEnd = Time.monotonicNow();
 
+      MetricTimer reconstructionTimer = TimerFactory.getTimer("Recovery_Reconstruct");
+      reconstructionTimer.start();
       // step2: decode to reconstruct targets
       reconstructTargets(toReconstructLen);
+      reconstructionTimer.stop("Decode chunk from sources");
       long decodeEnd = Time.monotonicNow();
 
       // step3: transfer data
@@ -166,7 +174,10 @@ class StripedBlockReconstructor extends StripedReconstructor
   private void decode(ByteBuffer[] inputs, int[] erasedIndices,
       ByteBuffer[] outputs) throws IOException {
     long start = System.nanoTime();
+    MetricTimer reconstructionTimer = TimerFactory.getTimer("Recovery_Reconstruct");
+    reconstructionTimer.start();
     getDecoder().decode(inputs, erasedIndices, outputs);
+    reconstructionTimer.stop("Decode chunk");
     long end = System.nanoTime();
     this.getDatanode().getMetrics().incrECDecodingTime(end - start);
   }

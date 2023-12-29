@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.server.datanode.erasurecode.ErasureCodingTestHelper;
 import org.apache.hadoop.io.ElasticByteBufferPool;
+import org.apache.hadoop.util.TimerFactory;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
@@ -231,6 +232,15 @@ public class TestReconstructStripedFile {
     int fileLen = (dataBlkNum + 1) * blockSize + blockSize / 10;
     assertFileBlocksReconstruction("/testRecoverOneDataBlock", fileLen,
         ReconstructionType.DataOnly, 1);
+    TimerFactory.closeAll();
+  }
+
+  @Test(timeout = 120000)
+  public void testRecoverOneDataBlockSmallFile() throws Exception {
+    int fileLen = 629145600;
+    assertFileBlocksReconstruction("/testRecoverOneDataBlock", fileLen,
+            ReconstructionType.DataOnly, 1);
+    TimerFactory.closeAll();
   }
 
   @Test(timeout = 120000)
