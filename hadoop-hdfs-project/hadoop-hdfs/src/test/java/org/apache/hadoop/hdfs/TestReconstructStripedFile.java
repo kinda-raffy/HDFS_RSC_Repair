@@ -169,7 +169,7 @@ public class TestReconstructStripedFile {
     random.setSeed(100);
 
     fs = cluster.getFileSystem();
-    int RS_POLICY_INDEX = 0;
+    // int RS_POLICY_INDEX = 0;
     int TR_POLICY_INDEX = 5;
     String policyName = SystemErasureCodingPolicies.getPolicies().get(TR_POLICY_INDEX).getName();
     fs.enableErasureCodingPolicy(policyName);
