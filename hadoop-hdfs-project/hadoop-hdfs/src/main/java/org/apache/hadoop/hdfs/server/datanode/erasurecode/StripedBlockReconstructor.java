@@ -150,7 +150,7 @@ class StripedBlockReconstructor extends StripedReconstructor
   private void reconstructTargets(int toReconstructLen) throws IOException {
     ByteBuffer[] inputs = getStripedReader().getInputBuffers(toReconstructLen);
     reconstructTargetInputs.appendInputs(inputs);
-    ByteBuffer[] decoderInputs = reconstructTargetInputs.getInputs();
+    ByteBuffer[] decoderInputs = reconstructTargetInputs.getInputs(toReconstructLen);
 
     int[] erasedIndices = stripedWriter.getRealTargetIndices();
     ByteBuffer[] outputs = stripedWriter.getRealTargetBuffers(toReconstructLen);
@@ -233,11 +233,11 @@ class StripedBlockReconstructor extends StripedReconstructor
       }
     }
 
-    ByteBuffer[] getInputs() {
+    ByteBuffer[] getInputs(int toReconstructLen) {
       ByteBuffer[] decoderInputs = new ByteBuffer[nodeCount];
       for (int nodeIndex = 0; nodeIndex < inputs.length; nodeIndex++) {
         if (nodeIndex == erasedNodeIndex) { continue; }
-        int inputLimit = 32768 * bandwidth[nodeIndex] / 8;
+        int inputLimit = toReconstructLen * bandwidth[nodeIndex] / 8;
 
         byte[] trimmedInput = new byte[inputLimit];
         System.arraycopy(totalInputs[nodeIndex], bufferReadPointers[nodeIndex], trimmedInput, 0, inputLimit);

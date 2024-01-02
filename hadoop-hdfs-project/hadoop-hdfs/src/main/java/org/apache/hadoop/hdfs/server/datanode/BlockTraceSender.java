@@ -588,7 +588,7 @@ class BlockTraceSender implements java.io.Closeable {
         MetricTimer diskOperationTimer = TimerFactory.getTimer("Disk_Operations");
         diskOperationTimer.start();
         replicaInputStreams.readDataFully(encoderInput, 0, dataLen);
-        diskOperationTimer.stop("Read data at helper-node before computing traces");
+        diskOperationTimer.stop("Read data at helper-node" + helperNodeIndex + " before computing traces");
         byte[] nodeTrace = repairTraceGeneration(helperNodeIndex, lostNodeIndex, encoderInput, dataLen);
         byte[] encoderOutput = new byte[(int) Math.ceil((double) nodeTrace.length / 8)];
         compressTrace(nodeTrace, encoderOutput);
@@ -656,7 +656,7 @@ class BlockTraceSender implements java.io.Closeable {
     protected byte[] repairTraceGeneration(
             int nodeIndex, int erasedNodeIndex,
             byte[] inputs, int encodeLength
-    ) throws IOException {
+    ) {
         assert(nodeIndex != erasedNodeIndex);
         byte bw = helperTable.getByte_9_6(nodeIndex, erasedNodeIndex, 0);
         byte[] repairTrace = new byte[bw * encodeLength];
@@ -673,7 +673,7 @@ class BlockTraceSender implements java.io.Closeable {
                 repairTrace[idx++] = preComputedParity[parityIndex];
             }
         }
-        helperTraceTimer.stop("Compute helper-node traces");
+        helperTraceTimer.stop("Compute helper-node traces on node: " + nodeIndex + " with erased node: " + erasedNodeIndex);
         return repairTrace;
     }
 

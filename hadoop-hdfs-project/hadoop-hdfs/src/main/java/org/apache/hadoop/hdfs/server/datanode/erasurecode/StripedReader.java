@@ -337,14 +337,6 @@ class StripedReader {
         inputs[index] = (ByteBuffer)buffer.flip();
       }
     }
-    // [TODO] Clean.
-    // for (int i = 0; i < inputs.length; i++) {
-    //   if (inputs[i] != null) {
-    //     byte[]test = inputs[0].array();
-    //     ourECLogger.write(this, datanode.getDatanodeUuid(), "getInputBuffers 2 - reader.getIndex(): " +
-    //             Arrays.toString(Arrays.copyOfRange(test, 0, 30)));
-    //   }
-    // }
     return inputs;
   }
 
@@ -644,5 +636,4 @@ class StripedReader {
   public int getMinRequiredSources() {
     return minRequiredSources;
   }
-
 }

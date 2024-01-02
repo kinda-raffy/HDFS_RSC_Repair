@@ -416,20 +416,10 @@ public class TestReconstructStripedFile {
 
   @Test(timeout = 1200000)
   public void testRecoverOneDataBlockSmallFile() throws Exception {
-    int FILE_LEN_TEST_1 = 6291456; // 6 * 1024 * 1024: to make the rounding byte
-    // int FILE_LEN_TEST_1 = 60; // 6 * 10 * 10: to make the rounding byte
-    int fileLen = FILE_LEN_TEST_1;
-    String testCaseName = "6MB-AllZeros";
-    ourECLogger = OurECLogger.getInstance(testCaseName);
-    ourECLogger.write(this, "TESTCASE - 6MB-AllZeros");
-    ourECLogger.write(this, "fileLen: " + fileLen);
-    printLogInfo();
-
-    ourTestLogger = OurTestLogger.getInstance(testCaseName);
+    // int fileLen = 62914560; // 6 * 1024 * 1024: to make the rounding byte
+    int fileLen = 48 * 1024 * 1024 * 10;
     assertFileBlocksReconstructionTraceRepair("/testRecoverOneDataBlock", fileLen,
             ReconstructionType.DataOnly, 1);
-    // assertFileBlocksReconstruction("/testRecoverOneDataBlock", fileLen,
-    //         ReconstructionType.DataOnly, 1);
     // [TODO] Write test code to read the content from the test file and assert
     assertResults(1);
     TimerFactory.closeAll();
