@@ -11,12 +11,8 @@ public class TimerFactory {
     }
 
     public static synchronized MetricTimer getTimer(String metric) {
-        try {
-            if (!metricTimers.containsKey(metric)) {
-                metricTimers.put(metric, new MetricTimer(metric));
-            }
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        if (!metricTimers.containsKey(metric)) {
+            metricTimers.put(metric, new MetricTimer(metric));
         }
         return metricTimers.get(metric);
     }

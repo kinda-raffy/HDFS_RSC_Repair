@@ -588,7 +588,7 @@ class BlockTraceSender implements java.io.Closeable {
         MetricTimer diskOperationTimer = TimerFactory.getTimer("Disk_Operations");
         diskOperationTimer.start();
         replicaInputStreams.readDataFully(encoderInput, 0, dataLen);
-        diskOperationTimer.stop("Read data at helper-node" + helperNodeIndex + " before computing traces");
+        diskOperationTimer.stop("Read data at helper-node " + helperNodeIndex + " before computing traces");
         byte[] nodeTrace = repairTraceGeneration(helperNodeIndex, lostNodeIndex, encoderInput, dataLen);
         byte[] encoderOutput = new byte[(int) Math.ceil((double) nodeTrace.length / 8)];
         compressTrace(nodeTrace, encoderOutput);
