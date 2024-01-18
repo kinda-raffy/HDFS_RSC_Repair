@@ -46,7 +46,8 @@
 
 
 #define TEST_SOURCES 127
-#define TEST_LEN 10
+#define TEST_LEN 48*1024*1024
+// #define TEST_LEN 1000000
 #define BIN_LEN 8
 //100.000 = 1.2->1.5s
 //0.015
@@ -754,13 +755,6 @@ unsigned char* repair_trace_generation(int n, int i, int j, unsigned char **buff
 	unsigned char* RepairTr = (unsigned char*) malloc(sizeof(unsigned char) * bw * TEST_LEN); 	// to store all actual repair traces as bits
 
 	Hij = h_htbl[i][j]+1;	// Hij = &H[i][j][1]: ignoring the first element which is the bw
-
-    printf("\nHij %d: \n", i);
-    for (int i = 0; i < 8; i++) {
-        printf("%d|%d ", Hij[i], Hij[i] > 127 ? Hij[i] - 256 : Hij[i]);
-    }
-    printf("\n");
-
 	idx = 0;
 	for (a = 0; a < bw; a++){
 		for (test_codeword = 0; test_codeword < TEST_LEN; test_codeword++){
@@ -768,13 +762,6 @@ unsigned char* repair_trace_generation(int n, int i, int j, unsigned char **buff
 			//RepairTr[idx++] = product[Hij[a]][(buffs[i][test_codeword])];
 		}
 	}
-
-    printf("Repair trace for %d\n[", i);
-    for (int i = 0; i < bw * TEST_LEN; i++) {
-        printf("%d, ", RepairTr[i]);
-    }
-    printf("]\n");
-
 	return RepairTr;
 } 
 
@@ -782,8 +769,6 @@ unsigned char* repair_trace_generation(int n, int i, int j, unsigned char **buff
 
 // [DEBUG] buffs is the data.
 unsigned char* repair_trace_optimised(int n, int j, unsigned char **buffs, double* repair_time_ptr){
-    printf("[FAIL] node is %d.\n\n", j);  // [DEBUG]
-
 	int a, b, i, u, idx, test_codeword; 				// for FOR loop
 	unsigned char bw[n];								// bw[i] = #bits sent from Node i to Node j
 	unsigned char table[72];							// to store a row in H or R to speed up the access
@@ -803,15 +788,6 @@ unsigned char* repair_trace_optimised(int n, int j, unsigned char **buffs, doubl
 
 	unsigned char* rev = (unsigned char*) malloc(sizeof(unsigned char) * TEST_LEN);			// to store the recovery cj (xTEST_LEN)
 	memset(rev, 0, sizeof(unsigned char) * TEST_LEN);
-
-    printf("Buffs: \n");
-    for (i = 0; i < n; i++) {
-        printf("[Buff] %d: ", i);
-        for (int j = 0; j < TEST_LEN; j++) {
-            printf("%d, ", buffs[i][j]);
-        }
-        printf("\n");
-    }
 
  	//--------------------------------------------------------------
  	// Start of senders' computation: Node i computes the repair/helper traces 	
@@ -848,51 +824,23 @@ unsigned char* repair_trace_optimised(int n, int j, unsigned char **buffs, doubl
 		bw[i] = h_RTable[i][j][0];
 	}
 
-    // [DEBUG] Print bandwidths.
-    /*for (i = 0; i < n; i++) {
-        unsigned char bandwidth = h_RTable[i][j][0];
-        printf("[Trace] %d contains: %d.\n", i, bandwidth);
-    }*/
-
-    printf("\n");
-    for (int pr = 0; pr < n; pr++) {
-        printf("Node %d with bw %d:\n[", pr, bw[pr]);
-        for (int pr2 = 0; pr2 < bw[pr] * TEST_LEN; pr2++) {
-            printf("%d, ", RepairTrArray[pr][pr2]);
-        }
-        printf("]\n");
-    }
-    printf("\n");
-
-
-    printf("\nRepairTrAsNumbers: ");
     for (i = 0; i < n; i++) {
         if (i != j) {
-            printf("[Trace] %d: ", i);
             idx = i * TEST_LEN;
             for (test_codeword = 0; test_codeword < TEST_LEN; test_codeword++){
                 traces_as_number = 0; // convert bi[i] bit traces to decimal
                 // E.g., bw[i] = 4 and repair traces are (b0,b1,b2,b3) = (0,1,1,1) --> 7
                 for (a = 0; a < bw[i]; a++){
-                    //for (a = bw[i]-1; a >= 0; a--){
                     traces_as_number = traces_as_number << 1;
-                    unsigned char valueToXOR = RepairTrArray[i][a*TEST_LEN+test_codeword];
-                    traces_as_number ^= valueToXOR;
+                    traces_as_number ^= RepairTrArray[i][a*TEST_LEN+test_codeword];
                 }
                 // [DEBUG] Stored as a single decimal array.
                 RepairTrAsNumbers[idx++] = traces_as_number;	// idx = i*TEST_LEN + test_codeword
                 // RepairTrAsNumbers[i*TEST_LEN + test_codeword] = traces_as_number;
-                printf("%d, ", traces_as_number);
             }
         }
-        printf("\n");
     }
 
-    printf("\n RepairTrAsNumbers whole: \n");
-    for (int pr = 0; pr < n * TEST_LEN; pr++) {
-        printf("%d, ", RepairTrAsNumbers[pr]);
-    }
-    printf("]\n");
 
     end = clock();
     double elapsed_decimal = (double)(end - start)/CLOCKS_PER_SEC;
@@ -913,55 +861,34 @@ unsigned char* repair_trace_optimised(int n, int j, unsigned char **buffs, doubl
             Rij = h_RTable[i][j] + 1;		// Ignoring the bandwidth in the first entry.
             for (b = 0; b < 256; b++) {
                 for (a = 0; a < 8; a++) {
-                	//revMem[idx] ^= (parity[Rij[a] & b]) * Dj[a]; 	// idx = 256*i + b
 					revMem[(i<<8) + b] ^= (parity[Rij[a] & b]) * Dj[a]; 	// idx = 256*i + b
 				}
-                //idx++;
             }
         }
     }
-    printf("RevMem: \n[");
-    for (i = 0; i < n * 256; i++) {
-        printf("%d, ", revMem[i]);
-    }
-    printf("]\n Length: %d\n", i);
+
+    end = clock();
+    double elapsed_rev = (double)(end - start)/CLOCKS_PER_SEC;
+    printf("Repair decimal trace: %f secs \n", elapsed_rev);
+
+    start = clock();
 
     // [MARK] Construct cj.
     for (i = 0; i < n; i++) {
     	if (i != j) {
         	for (test_codeword = 0; test_codeword < TEST_LEN; test_codeword++) {
-        		idx = i*TEST_LEN + test_codeword;
-				traces_as_number = RepairTrAsNumbers[idx];
-
-                unsigned char debugRevMem = revMem[(i<<8) + traces_as_number];
-                int debugRevMemSigned = debugRevMem > 127 ? debugRevMem - 256 : debugRevMem;
-
-                unsigned char debugRev = rev[test_codeword];
-                int debugRevSigned = debugRev > 127 ? debugRev - 256 : debugRev;
-
-                unsigned char debugRes = debugRev ^ debugRevMem;
-                int debugResSigned = debugRes > 127 ? debugRes - 256 : debugRes;
-
-                rev[test_codeword] = debugRes;
-                // rev[test_codeword] ^= debugRevMem;
+                idx = i * TEST_LEN + test_codeword;
+                traces_as_number = RepairTrAsNumbers[idx];
+                rev[test_codeword] ^= revMem[(i << 8) + traces_as_number];
 			}
-            printf("Rev: \n[");
-            for (int pr = 0; pr < TEST_LEN; pr++) {
-                printf("%d, ", rev[pr]);
-            }
-            printf("]\n");
-            for (int pr = 0; pr < TEST_LEN; pr++) {
-                printf("%d, ", rev[pr] > 127 ? rev[pr] - 256 : rev[pr]);
-            }
-            printf("]\n");
     	}
     }
     end = clock();
-    double elapsed_rev = (double)(end - start)/CLOCKS_PER_SEC;
-    printf("Recover cj: %f secs \n", elapsed_rev);
+    double elapsed_cj = (double)(end - start)/CLOCKS_PER_SEC;
+    printf("Construct cj: %f secs \n", elapsed_cj);
     
     printf("-----------------------------------------\n");
-	double trace_repair_time_accurate = max_run_time + elapsed_decimal + elapsed_rev;
+	double trace_repair_time_accurate = max_run_time + elapsed_decimal + elapsed_rev + elapsed_cj;
     printf("Trace repair ACCURATE (per erasure): %.6f seconds\n", trace_repair_time_accurate);
 	printf("-----------------------------------------\n");
 	*repair_time_ptr = trace_repair_time_accurate;
@@ -1128,7 +1055,50 @@ int main(int argc, char *argv[])
     double trace_repair_time = ((double)(finish - start) / CLOCKS_PER_SEC);
     printf("Trace repair (per erasure): %.6f seconds\n", trace_repair_time);
     printf("-----------------------------------------\n");
-    // END OF TRACE REPAIR
+
+    //--------------------------------------------------------------------------
+    // Beginning of ISA-L repair
+
+    clock_t tic = clock();
+    // Generate decode matrix from encode matrix
+    re = gf_gen_decode_matrix(encode_matrix, decode_matrix,
+                              invert_matrix, decode_index, src_err_list, src_in_err,
+                              nerrs, nsrcerrs, k, m);
+    if (re != 0) {
+        printf("Fail to gf_gen_decode_matrix\n");
+        return -1;
+    }
+
+    printf("\n \n");
+    printf("nsrcerrs (number of original data error): %u \n", nsrcerrs);
+    //mean the data are erasured that is in original data. Eg: lost data where<k.
+    printf("nerrs (number of erased data): %u \n", nerrs);
+    printf("\n");
+
+    for (i = 0; i < k; i++) {
+        recov[i] = buffs[decode_index[i]];
+    }
+
+    // Recover data
+    ec_init_tables(k, nerrs, decode_matrix, g_tbls); //Generate or decode erasure codes on blocks of data
+    ec_encode_data(TEST_LEN, k, nerrs, g_tbls, recov, &temp_buffs[k]);// nerrs = rows, recov = data,
+
+    clock_t toc = clock();
+    double ISAL_repair_time = (double)(toc - tic) / CLOCKS_PER_SEC;
+    printf("ISA-L per erasure: %.6f seconds\n", ISAL_repair_time);
+    printf("-----------------------------------------\n\n");
+
+    // End of ISA-L repair
+    //----------------------------------------------------------------
+
+    printf("Computation time Trace/ISAL: %.1fx \n", 1.0*trace_repair_time/ISAL_repair_time);
+    printf("Computation time Trace/ISAL Accurate: %.1fx \n", 1.0*trace_repair_time_accurate/ISAL_repair_time);
+    printf("Erasure positions: ");
+    for (i = 0; i < nerrs-1; i++){
+        printf("%u, ", src_err_list[i]);
+    }
+    printf("%u\n", src_err_list[nerrs-1]);
+
     return 0;
 }
 

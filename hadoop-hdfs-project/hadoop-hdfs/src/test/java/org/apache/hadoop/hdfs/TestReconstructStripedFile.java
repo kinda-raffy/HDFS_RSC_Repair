@@ -417,7 +417,7 @@ public class TestReconstructStripedFile {
   @Test(timeout = 1200000)
   public void testRecoverOneDataBlockSmallFile() throws Exception {
     // int fileLen = 62914560; // 6 * 1024 * 1024: to make the rounding byte
-    int fileLen = 48 * 1024 * 1024 * 10;
+    int fileLen = 48 * 1024 * 1024 * 1;
     assertFileBlocksReconstructionTraceRepair("/testRecoverOneDataBlock", fileLen,
             ReconstructionType.DataOnly, 1);
     // [TODO] Write test code to read the content from the test file and assert
