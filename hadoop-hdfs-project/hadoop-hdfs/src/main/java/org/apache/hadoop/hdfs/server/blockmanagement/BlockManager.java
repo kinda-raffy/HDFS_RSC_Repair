@@ -2284,7 +2284,8 @@ public class BlockManager implements BlockStatsMXBean {
       }
       final DatanodeDescriptor[] newSrcNodes =
           new DatanodeDescriptor[srcNodes.length];
-      byte[] newIndices = new byte[liveBlockIndices.size()];
+      byte[] newIndices = new byte[liveBlockIndices.size()];  // [DEBUG] Hard-coded to all dn excl. 1.
+      // byte[] newIndices = new byte[] {0, 2, 3, 4, 5, 6, 7, 8};  // [DEBUG] Hard-coded to all dn excl. 1.
       adjustSrcNodesAndIndices((BlockInfoStriped)block,
           srcNodes, liveBlockIndices, newSrcNodes, newIndices);
       byte[] busyIndices = new byte[liveBusyBlockIndices.size()];

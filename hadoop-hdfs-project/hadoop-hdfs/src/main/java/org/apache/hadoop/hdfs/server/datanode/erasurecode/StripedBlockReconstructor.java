@@ -23,6 +23,7 @@ import org.apache.hadoop.hdfs.server.datanode.metrics.DataNodeMetrics;
 import org.apache.hadoop.io.erasurecode.coder.util.tracerepair.RecoveryTable;
 import org.apache.hadoop.io.erasurecode.rawcoder.InvalidDecodingException;
 import org.apache.hadoop.util.MetricTimer;
+import org.apache.hadoop.util.OurTestLogger;
 import org.apache.hadoop.util.Time;
 import org.apache.hadoop.util.TimerFactory;
 
@@ -38,7 +39,7 @@ import java.nio.ByteBuffer;
 class StripedBlockReconstructor extends StripedReconstructor
         implements Runnable {
   private final RecoveryTable recoveryTable = new RecoveryTable();
-
+  private final OurTestLogger ourTestLogger = OurTestLogger.getInstance();
   private final int nodeCount = getStripedReader().numberOfInputs();
   ByteBuffer[] totalByteBuffers = new ByteBuffer[nodeCount];
   private StripedWriter stripedWriter;
@@ -68,6 +69,7 @@ class StripedBlockReconstructor extends StripedReconstructor
       reconstructionTimer.start();
       reconstruct();
       reconstructionTimer.stop("Perform reconstruct operation");
+      ourTestLogger.write("Performing block reconstruction");
       stripedWriter.endTargetBlocks();
       // Currently we don't check the acks for packets, this is similar as
       // block replication.
@@ -114,6 +116,9 @@ class StripedBlockReconstructor extends StripedReconstructor
       diskOperationTimer.start();
       getStripedReader().readMinimumSources(toReconstructLen);
       diskOperationTimer.stop("Read data from helper-nodes at recovery-node for reconstruction");
+      // ourTestLogger.write("Read " + toReconstructLen + " bytes from " +
+      //     getStripedReader().getMinRequiredSources() + " sources. Total bytes read: "
+      //     + bytesToRead + " out of " + getMaxTargetLength() + " bytes");
       long readEnd = Time.monotonicNow();
 
       // step2: decode to reconstruct targets

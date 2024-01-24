@@ -347,8 +347,7 @@ public class TestReconstructStripedFile {
       d[i] = deadList.get(i);
     }
     // [TODO] Clarify this change.
-    // return d;
-    return new int[] { 1 };
+    return d;
   }
 
   private void shutdownDataNode(DataNode dn) throws IOException {
@@ -416,12 +415,10 @@ public class TestReconstructStripedFile {
 
   @Test(timeout = 1200000)
   public void testRecoverOneDataBlockSmallFile() throws Exception {
-    // int fileLen = 62914560; // 6 * 1024 * 1024: to make the rounding byte
+    // int fileLen = 6 * 1024 * 1024; // 6 * 1024 * 1024: to make the rounding byte
     int fileLen = 48 * 1024 * 1024;
     assertFileBlocksReconstructionTraceRepair("/testRecoverOneDataBlock", fileLen,
             ReconstructionType.DataOnly, 1);
-    // [TODO] Write test code to read the content from the test file and assert
-    assertResults(1);
     TimerFactory.closeAll();
   }
 
@@ -459,7 +456,8 @@ public class TestReconstructStripedFile {
       bitset.set(dnMap.get(storageInfo));
     }
     // This has been hardcoded to 1.
-    int[] dead = generateDeadDnIndices(type, toRecoverBlockNum, indices);
+    // int[] dead = generateDeadDnIndices(type, toRecoverBlockNum, indices);
+    int[] dead = new int[] {1};
     ourECLogger.write(this, "Note: indices == " + Arrays.toString(indices)
             + ". Generate errors on datanodes: " + Arrays.toString(dead));
 
@@ -469,11 +467,11 @@ public class TestReconstructStripedFile {
 
     DatanodeInfo[] dataDNs = new DatanodeInfo[toRecoverBlockNum];
     int[] deadDnIndices = new int[toRecoverBlockNum];
-    blocks = new ExtendedBlock[toRecoverBlockNum];
-    replicas = new File[toRecoverBlockNum];
-    replicaLengths = new long[toRecoverBlockNum];
+    ExtendedBlock[] blocks = new ExtendedBlock[toRecoverBlockNum];
+    File[] replicas = new File[toRecoverBlockNum];
+    long[] replicaLengths = new long[toRecoverBlockNum];
     File[] metaDatas = new File[toRecoverBlockNum];
-    replicaContents = new byte[toRecoverBlockNum][];
+    byte[][] replicaContents = new byte[toRecoverBlockNum][];
     Map<ExtendedBlock, DataNode> errorMap = new HashMap<>(dead.length);
     // [DEBUG] To recover block num is 1. Gets the data on the dead node.
     for (int i = 0; i < toRecoverBlockNum; i++) {
@@ -515,7 +513,7 @@ public class TestReconstructStripedFile {
     storageInfos = lastBlock.getLocations();
     assertEquals(storageInfos.length, groupSize - stoppedDN);
 
-    targetDNs = new int[dnNum - groupSize];
+    int[] targetDNs = new int[dnNum - groupSize];
     int n = 0;
     for (int i = 0; i < dnNum; i++) {
       if (!bitset.get(i)) { // not contain replica of the block.
@@ -533,7 +531,33 @@ public class TestReconstructStripedFile {
     StripedFileTestUtil.waitForReconstructionFinished(file, fs, groupSize);
 
     targetDNs = sortTargetsByReplicas(blocks, targetDNs);
+
     // Check the replica on the new target node.
+    for (int i = 0; i < toRecoverBlockNum; i++) {
+      File replicaAfterReconstruction = cluster.getBlockFile(targetDNs[i], blocks[i]);
+      ourECLogger.write(this, "replica after reconstruction " + replicaAfterReconstruction);
+      File metadataAfterReconstruction =
+              cluster.getBlockMetadataFile(targetDNs[i], blocks[i]);
+      assertEquals(replicaLengths[i], replicaAfterReconstruction.length());
+      ourECLogger.write(this, "replica before " + replicas[i]);
+      ourECLogger.write(this, "metadata: " + metadataAfterReconstruction.getName());
+      assertTrue(metadataAfterReconstruction.getName().
+              endsWith(blocks[i].getGenerationStamp() + ".meta"));
+      byte[] replicaContentAfterReconstruction =
+              DFSTestUtil.readFileAsBytes(replicaAfterReconstruction);
+
+      boolean isRecovering = Arrays.equals(replicaContents[i], replicaContentAfterReconstruction);
+      ourECLogger.write(this, "isRecovering: " + isRecovering);
+      if (!isRecovering) {
+        ourECLogger.write(this, replicaContentAfterReconstruction.length + " / " + replicaContents[i].length);
+        byte[] subArrayBeforeReplica = Arrays.copyOfRange(replicaContents[i], 0, 60);
+        ourECLogger.write(this, "original: " + Arrays.toString(subArrayBeforeReplica));
+
+        byte[] subArrayAfterReplicaContent = Arrays.copyOfRange(replicaContentAfterReconstruction, 0, 60);
+        ourECLogger.write(this, "after reconstruction: " + Arrays.toString(subArrayAfterReplicaContent));
+      }
+      Assert.assertArrayEquals(replicaContents[i], replicaContentAfterReconstruction);
+    }
   }
 
   // [TODO] Can this be combined with the above? Note, this is
@@ -636,41 +660,6 @@ public class TestReconstructStripedFile {
       byte[] replicaContentAfterReconstruction =
               DFSTestUtil.readFileAsBytes(replicaAfterReconstruction);
 
-      Assert.assertArrayEquals(replicaContents[i], replicaContentAfterReconstruction);
-    }
-  }
-
-  // [TODO] This necessitates a cleanup (assertResults).
-  private int[] targetDNs;
-  private ExtendedBlock[] blocks;
-  private long[] replicaLengths;
-  private File[] replicas;
-  private byte[][] replicaContents;
-
-  private void assertResults(int toRecoverBlockNum)  throws Exception  {
-    for (int i = 0; i < toRecoverBlockNum; i++) {
-      File replicaAfterReconstruction = cluster.getBlockFile(targetDNs[i], blocks[i]);
-      ourECLogger.write(this, "replica after reconstruction " + replicaAfterReconstruction);
-      File metadataAfterReconstruction =
-              cluster.getBlockMetadataFile(targetDNs[i], blocks[i]);
-      assertEquals(replicaLengths[i], replicaAfterReconstruction.length());
-      ourECLogger.write(this, "replica before " + replicas[i]);
-      ourECLogger.write(this, "metadata: " + metadataAfterReconstruction.getName());
-      assertTrue(metadataAfterReconstruction.getName().
-              endsWith(blocks[i].getGenerationStamp() + ".meta"));
-      byte[] replicaContentAfterReconstruction =
-              DFSTestUtil.readFileAsBytes(replicaAfterReconstruction);
-
-      boolean isRecovering = Arrays.equals(replicaContents[i], replicaContentAfterReconstruction);
-      ourECLogger.write(this, "isRecovering: " + isRecovering);
-      if (!isRecovering) {
-        ourECLogger.write(this, replicaContentAfterReconstruction.length + " / " + replicaContents[i].length);
-        byte[] subArrayBeforeReplica = Arrays.copyOfRange(replicaContents[i], 0, 60);
-        ourECLogger.write(this, "original: " + Arrays.toString(subArrayBeforeReplica));
-
-        byte[] subArrayAfterReplicaContent = Arrays.copyOfRange(replicaContentAfterReconstruction, 0, 60);
-        ourECLogger.write(this, "after reconstruction: " + Arrays.toString(subArrayAfterReplicaContent));
-      }
       Assert.assertArrayEquals(replicaContents[i], replicaContentAfterReconstruction);
     }
   }

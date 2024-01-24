@@ -135,7 +135,8 @@ class BlockTraceSender implements java.io.Closeable {
      * not sure if there will be much more improvement.
      */
     private static final int MIN_BUFFER_WITH_TRANSFERTO = 64*1024;
-    private static final int chunkSize = DFSUtilClient.CHUNK_SIZE;
+    private static final int chunkSize = DFSUtilClient.CHUNK_SIZE;  // [DEBUG] 32 * 1024
+    // private static final int chunkSize = 32 * 1024;
     private static final int IO_FILE_BUFFER_SIZE;
     static {
         HdfsConfiguration conf = new HdfsConfiguration();
@@ -589,9 +590,9 @@ class BlockTraceSender implements java.io.Closeable {
         diskOperationTimer.start();
         replicaInputStreams.readDataFully(encoderInput, 0, dataLen);
         diskOperationTimer.stop("Read data at helper-node " + helperNodeIndex + " before computing traces");
-        byte[] nodeTrace = repairTraceGeneration(helperNodeIndex, lostNodeIndex, encoderInput, dataLen);
-        byte[] encoderOutput = new byte[(int) Math.ceil((double) nodeTrace.length / 8)];
-        compressTrace(nodeTrace, encoderOutput);
+        byte[] encoderOutput = repairTraceGeneration(helperNodeIndex, lostNodeIndex, encoderInput, dataLen);
+        // byte[] encoderOutput = new byte[(int) Math.ceil((double) nodeTrace.length / 8)];
+        // compressTrace(nodeTrace, encoderOutput);
 
         int packetLength = encoderOutput.length + 33; // 33 is the header length, so 34 is the position
         packetBuffer = ByteBuffer.allocate(packetLength);
@@ -653,7 +654,48 @@ class BlockTraceSender implements java.io.Closeable {
         return new int[]{dataLen, encoderOutput.length};
     }
 
-    protected byte[] repairTraceGeneration(
+    public byte[] repairTraceGeneration(
+            int nodeIndex, int erasedNodeIndex,
+            byte[] inputs, int encodeLength
+    ) {
+        byte bw = helperTable.getByte_9_6(nodeIndex, erasedNodeIndex, 0);
+        byte[] repairTrace = new byte[bw * encodeLength];
+        byte[] H = helperTable.getRow_9_6(nodeIndex, erasedNodeIndex);
+        byte[] Hij = new byte[H.length - 1];
+        System.arraycopy(H, 1, Hij, 0, Hij.length);
+        int idx = 0;
+        MetricTimer helperTraceTimer = TimerFactory.getTimer("Helper_Trace_Computation");
+        helperTraceTimer.start();
+        for (int testCodeWord = 0; testCodeWord < encodeLength; testCodeWord++) {
+            for (int a = 0; a < bw; a++) {
+                repairTrace[idx++] = preComputedParity[(byte) (Hij[a] & (inputs[testCodeWord])) & 0xFF];
+            }
+        }
+        helperTraceTimer.stop("Compute helper-node traces on node: " + nodeIndex + " with erased node: " + erasedNodeIndex);
+        ourTestLogger.write("Trace Generation at HelperNode: " + nodeIndex + " with erased node: " + erasedNodeIndex + " - bw: " + bw);
+        byte[] compressedRepairTrace = new byte[(int) (encodeLength * (bw / 8.0))];
+        compressTrace(repairTrace, compressedRepairTrace);
+        return compressedRepairTrace;
+    }
+
+    public static void compressTrace(byte[] trace, byte[] output) {
+        // [FIXME] Deal with output offsets.
+        int bitToEncodeIndex = 0;
+        for (byte bit : trace) {
+            assert(bit == 0 || bit == 1);
+            int outputElementIndex = bitToEncodeIndex / 8;
+            int bitPositionInElement = bitToEncodeIndex % 8;
+            if (bit == 1) {
+                output[outputElementIndex] |= (byte) (1 << (7 - bitPositionInElement));
+            } else {
+                output[outputElementIndex] &= (byte) ~(1 << (7 - bitPositionInElement));
+            }
+            bitToEncodeIndex++;
+        }
+    }
+
+    // [TODO] Clean. This method processed the bandwidth first.
+    /*protected byte[] repairTraceGeneration(
             int nodeIndex, int erasedNodeIndex,
             byte[] inputs, int encodeLength
     ) {
@@ -674,24 +716,9 @@ class BlockTraceSender implements java.io.Closeable {
             }
         }
         helperTraceTimer.stop("Compute helper-node traces on node: " + nodeIndex + " with erased node: " + erasedNodeIndex);
+        ourTestLogger.write("Trace Generation at HelperNode: " + nodeIndex + " with erased node: " + erasedNodeIndex + " - bw: " + bw);
         return repairTrace;
-    }
-
-    public static void compressTrace(byte[] trace, byte[] output) {
-        // [FIXME] Deal with output offsets.
-        int bitToEncodeIndex = 0;
-        for (byte bit : trace) {
-            assert(bit == 0 || bit == 1);
-            int outputElementIndex = bitToEncodeIndex / 8;
-            int bitPositionInElement = bitToEncodeIndex % 8;
-            if (bit == 1) {
-                output[outputElementIndex] |= (byte) (1 << (7 - bitPositionInElement));
-            } else {
-                output[outputElementIndex] &= (byte) ~(1 << (7 - bitPositionInElement));
-            }
-            bitToEncodeIndex++;
-        }
-    }
+    }*/
 
     /**
      * close opened files.

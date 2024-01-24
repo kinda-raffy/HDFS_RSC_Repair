@@ -717,6 +717,11 @@ class DataXceiver extends Receiver implements Runnable {
                              final int helperNodeIndex,
                              final int dataBlkNum,
                              final int parityBlkNum) throws IOException {
+    // [DEBUG]
+    if (lostBlockIndex != 1) {
+      return;
+    }
+
     previousOpClientName = clientName;
     long read = 0;
     updateCurrentThreadName("Sending block trace " + block);
@@ -727,6 +732,7 @@ class DataXceiver extends Receiver implements Runnable {
 
     ourECLogger.write(this, datanode.getDatanodeUuid(), "before creating blockTraceSender - lostNodeIndex: " +
             lostBlockIndex + " - helperNodeIndex: " + helperNodeIndex + " - length: " + length);
+
     // send the block
     BlockTraceSender blockTraceSender = null;
     DatanodeRegistration dnR =
