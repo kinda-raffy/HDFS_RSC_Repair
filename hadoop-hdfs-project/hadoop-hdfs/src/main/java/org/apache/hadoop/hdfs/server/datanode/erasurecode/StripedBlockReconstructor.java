@@ -189,7 +189,10 @@ class StripedBlockReconstructor extends StripedReconstructor
   private void decode(ByteBuffer[] inputs, int[] erasedIndices,
                       ByteBuffer[] outputs) throws IOException {
     long start = System.nanoTime();
+    MetricTimer reconstructionTimer = TimerFactory.getTimer("Recovery_Reconstruct");
+    reconstructionTimer.start();
     getDecoder().decode(inputs, erasedIndices, outputs);
+    reconstructionTimer.stop("Decode chunk");
     long end = System.nanoTime();
     this.getDatanode().getMetrics().incrECDecodingTime(end - start);
   }
