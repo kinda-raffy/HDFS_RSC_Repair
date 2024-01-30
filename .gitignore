@@ -22,6 +22,7 @@ dependency-reduced-pom.xml
 make-build-debug
 *.log
 ECLog/
+TestLog/
 .hprof
 
 # Filesystem contract test options and credentials

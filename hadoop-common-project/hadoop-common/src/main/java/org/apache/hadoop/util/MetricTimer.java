@@ -66,9 +66,10 @@ public class MetricTimer implements AutoCloseable {
 
     private void writeMetricSummary() {
         try (FileWriter summaryFw = new FileWriter(summaryFile)) {
-            summaryFw.write(String.valueOf('-').repeat(50) + "\n");
+            String dashLine = new String(new char[50]).replace("\0", "-");
+            summaryFw.write(dashLine + "\n");
             summaryFw.write(metric + "'s Operation Summary\n");
-            summaryFw.write(String.valueOf('-').repeat(50) + "\n\n");
+            summaryFw.write(dashLine + "\n\n");
 
             for (Map.Entry<String, List<Long>> entry : recordedMetrics.entrySet()) {
                 String label = entry.getKey();
