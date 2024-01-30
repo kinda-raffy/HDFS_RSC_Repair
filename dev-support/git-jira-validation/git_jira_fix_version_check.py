@@ -19,7 +19,7 @@
 #
 ############################################################################
 """An application to assist Release Managers with ensuring that histories in
-Git and fixVersions in JIRA are in agreement. See README.md for a detailed
+Git and fixVersions in JIRA are in agreement. See README.txt for a detailed
 explanation.
 """
 
