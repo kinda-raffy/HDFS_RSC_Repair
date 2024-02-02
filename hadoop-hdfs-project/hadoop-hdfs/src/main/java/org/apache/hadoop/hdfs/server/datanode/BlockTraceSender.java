@@ -615,6 +615,8 @@ class BlockTraceSender implements java.io.Closeable {
             // off - the start offset in the data.
             // len - the number of bytes to write.
             out.write(buf, headerOffset, encoderOutput.length + headerLength);
+            MetricTimer outboundTimer = TimerFactory.getTimer("Outbound_Operations");
+            outboundTimer.mark("Send data from node: " + helperNodeIndex + " with lost node: " + lostNodeIndex);
         } catch (IOException e) {
             String exceptionMessage = "sendPacketMethod - Error: " + e.getMessage();
             ourlog.write(this, datanode.getDatanodeUuid(), exceptionMessage);
@@ -666,15 +668,45 @@ class BlockTraceSender implements java.io.Closeable {
         int idx = 0;
         MetricTimer helperTraceTimer = TimerFactory.getTimer("Helper_Trace_Computation");
         helperTraceTimer.start();
-        for (int testCodeWord = 0; testCodeWord < encodeLength; testCodeWord++) {
-            for (int a = 0; a < bw; a++) {
-                repairTrace[idx++] = preComputedParity[(byte) (Hij[a] & (inputs[testCodeWord])) & 0xFF];
+        if (bw == 4) {
+            for (int testCodeWord = 0; testCodeWord < encodeLength; testCodeWord++) {
+                byte codeWord = inputs[testCodeWord];
+                int mask = codeWord & 0xFF;
+                repairTrace[idx++] = preComputedParity[Hij[0] & mask];
+                repairTrace[idx++] = preComputedParity[Hij[1] & mask];
+                repairTrace[idx++] = preComputedParity[Hij[2] & mask];
+                repairTrace[idx++] = preComputedParity[Hij[3] & mask];
+
+            }
+        } else if (bw == 2) {
+            for (int testCodeWord = 0; testCodeWord < encodeLength; testCodeWord++) {
+                byte codeWord = inputs[testCodeWord];
+                int mask = codeWord & 0xFF;
+                repairTrace[idx++] = preComputedParity[Hij[0] & mask];
+                repairTrace[idx++] = preComputedParity[Hij[1] & mask];
+            }
+        } else if (bw == 6) {
+            for (int testCodeWord = 0; testCodeWord < encodeLength; testCodeWord++) {
+                byte codeWord = inputs[testCodeWord];
+                int mask = codeWord & 0xFF;
+                repairTrace[idx++] = preComputedParity[Hij[0] & mask];
+                repairTrace[idx++] = preComputedParity[Hij[1] & mask];
+                repairTrace[idx++] = preComputedParity[Hij[2] & mask];
+                repairTrace[idx++] = preComputedParity[Hij[3] & mask];
+                repairTrace[idx++] = preComputedParity[Hij[4] & mask];
+                repairTrace[idx++] = preComputedParity[Hij[5] & mask];
+            }
+        } else {
+            for (int testCodeWord = 0; testCodeWord < encodeLength; testCodeWord++) {
+                for (int a = 0; a < bw; a++) {
+                    repairTrace[idx++] = preComputedParity[(byte) (Hij[a] & (inputs[testCodeWord])) & 0xFF];
+                }
             }
         }
-        helperTraceTimer.stop("Compute helper-node traces on node: " + nodeIndex + " with erased node: " + erasedNodeIndex);
-        ourTestLogger.write("Trace Generation at HelperNode: " + nodeIndex + " with erased node: " + erasedNodeIndex + " - bw: " + bw);
         byte[] compressedRepairTrace = new byte[(int) (encodeLength * (bw / 8.0))];
         compressTrace(repairTrace, compressedRepairTrace);
+        helperTraceTimer.stop("Total encoding operation at helper-node: " + nodeIndex + " with erased node: " + erasedNodeIndex);
+        ourTestLogger.write("Trace Generation at HelperNode: " + nodeIndex + " with erased node: " + erasedNodeIndex + " - bw: " + bw);
         return compressedRepairTrace;
     }
 
@@ -682,14 +714,11 @@ class BlockTraceSender implements java.io.Closeable {
         // [FIXME] Deal with output offsets.
         int bitToEncodeIndex = 0;
         for (byte bit : trace) {
-            assert(bit == 0 || bit == 1);
             int outputElementIndex = bitToEncodeIndex / 8;
             int bitPositionInElement = bitToEncodeIndex % 8;
-            if (bit == 1) {
-                output[outputElementIndex] |= (byte) (1 << (7 - bitPositionInElement));
-            } else {
-                output[outputElementIndex] &= (byte) ~(1 << (7 - bitPositionInElement));
-            }
+            byte mask = (byte) (1 << (7 - bitPositionInElement));
+            // Clear the bit in output then set bit if 1.
+            output[outputElementIndex] = (byte) ((output[outputElementIndex] & ~mask) | (bit << (7 - bitPositionInElement)));
             bitToEncodeIndex++;
         }
     }

@@ -19,7 +19,8 @@ package org.apache.hadoop.hdfs.server.datanode.erasurecode;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import org.apache.hadoop.util.Preconditions;
+
+import org.apache.hadoop.util.*;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
@@ -30,11 +31,9 @@ import org.apache.hadoop.hdfs.server.datanode.DataNode;
 import org.apache.hadoop.hdfs.util.StripedBlockUtil;
 import org.apache.hadoop.hdfs.util.StripedBlockUtil.BlockReadStats;
 import org.apache.hadoop.hdfs.util.StripedBlockUtil.StripingChunkReadResult;
-import org.apache.hadoop.util.DataChecksum;
 import org.apache.hadoop.hdfs.DFSUtilClient;
 import org.apache.hadoop.hdfs.client.impl.HelperTable96Client;
 import org.apache.hadoop.hdfs.protocol.ErasureCodingPolicy;
-import org.apache.hadoop.util.OurECLogger;
 
 import org.slf4j.Logger;
 
@@ -387,11 +386,13 @@ class StripedReader {
      */
     ourECLogger.write(this, datanode.getDatanodeUuid(), "successList: " + Arrays.toString(successList));
     ourECLogger.write(this, datanode.getDatanodeUuid(), "liveIndices: " + Arrays.toString(liveIndices));
+    MetricTimer inboundTrafficTimer = TimerFactory.getTimer("Inbound_Traffic");
     for (int i = 0; i < minRequiredSources; i++) {
       StripedBlockReader reader = readers.get(successList[i]);
       int toRead = getReadLength(liveIndices[successList[i]],
           reconstructLength);
       ourECLogger.write(this, datanode.getDatanodeUuid(), "toRead: " + toRead + " - liveIndex: " + liveIndices[successList[i]]);
+      inboundTrafficTimer.mark("Read from source: " + liveIndices[successList[i]] + " of read length: " + toRead);
 
       if (toRead > 0) {
         Callable<BlockReadStats> readCallable =

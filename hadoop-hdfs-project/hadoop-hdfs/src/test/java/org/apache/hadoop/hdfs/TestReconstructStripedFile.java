@@ -417,8 +417,11 @@ public class TestReconstructStripedFile {
   public void testRecoverOneDataBlockSmallFile() throws Exception {
     // int fileLen = 6 * 1024 * 1024; // 6 * 1024 * 1024: to make the rounding byte
     int fileLen = 48 * 1024 * 1024;
+    MetricTimer testTimer = TimerFactory.getTimer("Test_Recover_One_Data_Block_Small_File");
+    testTimer.start();
     assertFileBlocksReconstructionTraceRepair("/testRecoverOneDataBlock", fileLen,
             ReconstructionType.DataOnly, 1);
+    testTimer.stop("Total test execution");
     TimerFactory.closeAll();
   }
 

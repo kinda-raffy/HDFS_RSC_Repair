@@ -4,6 +4,8 @@ import com.sun.jndi.ldap.LdapURL;
 
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.lang.management.ManagementFactory;
@@ -19,9 +21,14 @@ public class MetricTimer implements AutoCloseable {
 
     public MetricTimer(String metric) {
         this.metric = metric;
-        String logFile = String.format("Benchmark/%s.log", metric);
-        this.summaryFile = String.format("Benchmark/Summary/%s.summary.log", metric);
+        String logDir = "Benchmark";
+        String summaryDir = "Benchmark/Summary";
+        String logFile = String.format("%s/%s.log", logDir, metric);
+        this.summaryFile = String.format("%s/%s.summary.log", summaryDir, metric);
+
         try {
+            Files.createDirectories(Paths.get(logDir));
+            Files.createDirectories(Paths.get(summaryDir));
             this.logFileWriter = new FileWriter(logFile);
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -35,7 +42,6 @@ public class MetricTimer implements AutoCloseable {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-        // stack.push(System.nanoTime());
     }
 
     public synchronized void stop(String label) {
@@ -44,13 +50,19 @@ public class MetricTimer implements AutoCloseable {
             long start = stack.pop();
             try {
                 long duration = threadMXBean.getCurrentThreadCpuTime() - start;
-                // recordedMetrics.computeIfAbsent(label, k -> Collections.synchronizedList(new ArrayList<>())).add(duration);
                 writeLog(label, duration);
                 recordedMetrics.computeIfAbsent(label, k -> new ArrayList<>()).add(duration);
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
-            // long duration = System.nanoTime() - start;
+        }
+    }
+
+    public synchronized void mark(String label) {
+        try {
+            writeLog(label, System.currentTimeMillis());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
