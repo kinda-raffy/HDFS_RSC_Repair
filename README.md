@@ -21,18 +21,18 @@ Then, launch the execution environment in docker:
 ```
 
 Alternatively, follow the instructions in this [document](./BUILDING.txt) to set up the execution environment locally (
-without docker), although the docker method is preferred.
+without docker), although the docker method is strongly preferred.
 
-Once the execution environment is ready, run the following command to execute the trace-repair method:
+Once the execution environment is ready, run the following command to execute the test case against the trace-repair method:
 
 ```bash
-benchmarkTraceRepair
+trdebug
 ```
 
 This command will compile and run a holistic test case that will benchmark the trace-repair method. This test case will
-create a 6MB file populated with random data, then it will simulate a datanode failure which will prompt Hadoop to
-schedule a reconstruction job using our trace repair method. This method will be benchmarked, and the test case will
-intermittently read the contents of the recovery node to verify the contents are correct.
+create a 48MB file populated with random data, then it will simulate a datanode failure which will prompt Hadoop to
+schedule a reconstruction job using our trace repair method. The test case will
+intermittently check and then read the contents of the recovery node to verify the contents are correct.
 
-Note that this method may take a while to run, as it will require to download and compile Hadoop from source. The
-results of the benchmark will be printed to the console at the end.
+Note that this method may take a while to run, as it will require you to download and compile Hadoop from source. The
+results of the benchmark will be placed in the `./hadoop-hdfs-project/hadoop-hdfs/Benchmarks/*` directory.
