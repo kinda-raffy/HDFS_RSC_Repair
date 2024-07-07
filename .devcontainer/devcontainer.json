@@ -1,0 +1,30 @@
+{
+    "name": "Hadoop",
+    "build": {
+        "dockerfile": "../dev-support/docker/Dockerfile_aarch64",
+        "context": "../dev-support/docker"
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "redhat.java",
+                "vscjava.vscode-java-debug"
+            ],
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "terminal.integrated.scrollback": 10000,
+                "java.autobuild.enabled": false,
+                "java.jdt.ls.androidSupport.enabled": "off",
+                "java.import.gradle.enabled": false
+            }
+        }
+    },
+    "runArgs": [
+        "--name=hadoop-devcontainer",
+        "--hostname=devcontainer",
+        "--network=hadoop"
+    ],
+    "mounts": [
+        "source=maven,target=/home/vscode/.m2"
+    ]
+}
