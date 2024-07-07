@@ -2,6 +2,8 @@ package org.apache.hadoop.util;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Paths;
+import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
@@ -18,8 +20,12 @@ public class OurECLogger {
 
     public OurECLogger(String testCaseName) {
         logFilePath = logFilePath.replaceAll("TestCaseName", testCaseName);
+        try {
+            Files.createDirectories(Paths.get("ECLog"));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         System.out.println("starting OurECLogger, logging at " + logFilePath);
-
     }
 
 
